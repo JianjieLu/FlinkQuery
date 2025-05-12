@@ -23,6 +23,10 @@ import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.KeyedProcessFunction;
 import org.apache.flink.streaming.api.functions.sink.RichSinkFunction;
 import org.apache.flink.util.Collector;
+import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer;
+import org.springframework.data.redis.serializer.StringRedisSerializer;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -32,6 +36,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 
 import static com.ljj.flinkquery.demos.entity.data.Utils.convertToTimestampMillis;
@@ -39,9 +44,8 @@ import static com.ljj.flinkquery.demos.entity.data.Utils.convertToTimestampMilli
 public class FlinkQueryApplication {
 
     public static final ConcurrentHashMap<String, String> resultMap = new ConcurrentHashMap<>();
-
+    public static RedisTemplate<String, String> redisTemplate;
     public static void main(String[] args) throws Exception {
-        startAutoCleaner(60_000);
         SpringApplication.run(FlinkQueryApplication.class, args);
         final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
         env.setParallelism(4);
@@ -112,31 +116,16 @@ public class FlinkQueryApplication {
                                     JSONpoint.put("timeStamp", correctedTime);
                                 }
                             }
-
                             // 解析为 PathPoint 对象
                             PathPoint ppoint = JSON.parseObject(String.valueOf(JSONpoint), PathPoint.class);
                             if (!ppoint.getStakeId().isEmpty()) {
                                 out.collect(ppoint);
                             }
-                        }
+                       }
                         } catch (Exception e) {
                             System.err.println("解析 JSON 时出错: " + e.getMessage());
                         }
                     }
-
-                    private long parseTimestamp(String timeStampStr) throws Exception {
-                        try {
-                            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss:SSS");
-                            LocalDateTime localDateTime = LocalDateTime.parse(timeStampStr, formatter);
-                            return localDateTime.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
-                        } catch (Exception e) {
-                            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss:SS");
-                            LocalDateTime localDateTime = LocalDateTime.parse(timeStampStr, formatter);
-                            return localDateTime.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
-                        }
-                    }
-
-
                 });
 
         // 关键处理逻辑
@@ -146,7 +135,7 @@ public class FlinkQueryApplication {
                 .returns(Types.TUPLE(Types.STRING, Types.STRING));
 
         // 添加内存存储Sink
-        processedStream.addSink(new InMemoryMapSink());
+        processedStream.addSink(new RedisSink());
 
         // 执行任务
         env.execute("Flink STCar to MemoryMap");
@@ -157,22 +146,7 @@ public class FlinkQueryApplication {
         long minuteTimestamp = convertToTimestampMillis(ppoint.getTimeStamp()) / 10000 * 10000;
         return minuteTimestamp + "_" + ppoint.getStakeId().split("\\+")[0];
     }
-public static void startAutoCleaner(long retentionMillis) {
-    new Thread(() -> {
-        while (true) {//持续运行清理任务
-            try {
-                Thread.sleep(30_000); // 每分钟清理一次，retentionMillis指的是保留多久的数据。比如360000就是保留一小时的数据，一小时前的数据全部删除
-                long cutoff = System.currentTimeMillis() - retentionMillis;//所有早于 cutoff 的数据将被删除
-                resultMap.keySet().removeIf(key -> {//遍历 resultMap 的所有键，删除过期的数据
-                    long timestamp = Long.parseLong(key.split("_")[0]);//这条数据的开始时间
-                    return timestamp < cutoff;//如果时间戳早于 cutoff，返回 true 则表示需要删除
-                });
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        }
-    }).start();
-}
+
     // 内存存储Sink实现
     static class InMemoryMapSink extends RichSinkFunction<Tuple2<String, String>> {
         @Override
@@ -185,6 +159,31 @@ public static void startAutoCleaner(long retentionMillis) {
 //            System.out.println("Value Length: " + value.f1.length() + " characters");
         }
     }
+static class RedisSink extends RichSinkFunction<Tuple2<String, String>> {
+
+   @Override
+    public void open(Configuration parameters) {
+          LettuceConnectionFactory factory = new LettuceConnectionFactory("100.65.38.141", 6379);
+        factory.afterPropertiesSet();
+
+        redisTemplate = new RedisTemplate<>();
+        redisTemplate.setConnectionFactory(factory);
+        redisTemplate.setKeySerializer(new StringRedisSerializer());
+        // 使用 JSON 序列化器
+        redisTemplate.setValueSerializer(new GenericJackson2JsonRedisSerializer());
+        redisTemplate.afterPropertiesSet();
+    }
+
+    @Override
+    public void invoke(Tuple2<String, String> value, Context context) {
+        // 使用HBaseServiceImpl中相同的redisTemplate实例
+        redisTemplate.opsForValue().set(
+            "v"+value.f0,
+            value.f1,
+            120, TimeUnit.SECONDS
+        );
+    }
+}
 
     // 车辆聚合处理器（保持不变）
     private static class VehicleAggregator extends KeyedProcessFunction<String, PathPoint, Tuple2<String, String>> {
