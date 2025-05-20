@@ -73,10 +73,10 @@ public class stakeEnvents {
                 }
             }
             if(left== stakeInfoList.size())left--;
-            if(abs(stakeInfoList.get(left).getLnglat()[0]-lng)>0.01&&abs(stakeInfoList.get(left).getLnglat()[1]-lat)>0.01){
-                System.out.println("abs1:  "+abs(stakeInfoList.get(left).getLnglat()[0]-lng));
-                System.out.println("abs2:  "+abs(stakeInfoList.get(left).getLnglat()[1]-lat));
-                return null;}
+//            if(abs(stakeInfoList.get(left).getLnglat()[0]-lng)>0.01&&abs(stakeInfoList.get(left).getLnglat()[1]-lat)>0.01){
+//                System.out.println("abs1:  "+abs(stakeInfoList.get(left).getLnglat()[0]-lng));
+//                System.out.println("abs2:  "+abs(stakeInfoList.get(left).getLnglat()[1]-lat));
+//                return null;}
             return stakeInfoList.get(left).getStake();
         }
 

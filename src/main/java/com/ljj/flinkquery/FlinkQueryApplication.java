@@ -1,5 +1,7 @@
 package com.ljj.flinkquery;
 
+import com.ljj.flinkquery.demos.entity.data.Utils;
+import com.ljj.flinkquery.demos.web.impl.myTools;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import com.alibaba.fastjson2.JSON;
@@ -23,11 +25,14 @@ import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.KeyedProcessFunction;
 import org.apache.flink.streaming.api.functions.sink.RichSinkFunction;
 import org.apache.flink.util.Collector;
+import org.springframework.data.redis.connection.RedisClusterConfiguration;
+import org.springframework.data.redis.connection.lettuce.LettuceClientConfiguration;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -37,6 +42,8 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import static com.ljj.flinkquery.demos.entity.data.Utils.*;
+
 
 
 import static com.ljj.flinkquery.demos.entity.data.Utils.convertToTimestampMillis;
@@ -53,7 +60,7 @@ public class FlinkQueryApplication {
         // Kafka配置保持不变
         String brokers = "100.65.38.40:9092";
         String groupId = "flink-group";
-        List<String> topics = Arrays.asList("MergedPathData", "MergedPathData.sceneTest.1",
+        List<String> topics = Arrays.asList("MergedPathData",
                 "MergedPathData.sceneTest.2", "MergedPathData.sceneTest.3",
                 "MergedPathData.sceneTest.4", "MergedPathData.sceneTest.5");
 
@@ -90,15 +97,9 @@ public class FlinkQueryApplication {
                     @Override
                     public void flatMap(String jsonString, Collector<PathPoint> out) {
                         try {
-                            JSONObject jsonObject = JSON.parseObject(jsonString);
-                            String timeStampStr = jsonObject.getString("timeStamp");
+//                            if(!myTools.getNString(jsonString,2,11).equals("timeStamp")){
 
-//                            for (PathPoint ppoint : JSON.parseArray(jsonObject.getString("pathList"), PathPoint.class)) {
-//                                if (isValidStakeId(ppoint.getStakeId())) {
-//                                    out.collect(ppoint);
-////                                    System.out.println("nowrong:"+ppoint);
-//                                }
-//                            }
+                            JSONObject jsonObject = JSON.parseObject(jsonString);
                        for (JSONObject JSONpoint : JSON.parseArray(jsonObject.getString("pathList"), JSONObject.class)) {
                             // 确保 specialFlag 存在
                             if (!JSONpoint.containsKey("specialFlag")) {
@@ -122,11 +123,29 @@ public class FlinkQueryApplication {
                                 out.collect(ppoint);
                             }
                        }
+//                       }
                         } catch (Exception e) {
                             System.err.println("解析 JSON 时出错: " + e.getMessage());
                         }
+
                     }
                 });
+DataStream<PathTData> flatMapStream1 = unionStream
+                .flatMap(new FlatMapFunction<String, PathTData>() {
+                    @Override
+                    public void flatMap(String jsonString, Collector<PathTData> out) {
+                        try {
+
+                            if(myTools.getNString(jsonString,2,11).equals("timeStamp")){
+                                PathTData data = JSON.parseObject(jsonString, PathTData.class);
+                                out.collect(data);
+                            }
+                        } catch (Exception e) {
+                            System.err.println("解析基站融合轨迹时出错: " + e.getMessage());
+                        }
+                    }
+                });
+
 
         // 关键处理逻辑
         DataStream<Tuple2<String, String>> processedStream = flatMapStream
@@ -143,7 +162,7 @@ public class FlinkQueryApplication {
     }
 // 生成RowKey方法
     private static String generateRowKey(PathPoint ppoint) {
-        long minuteTimestamp = convertToTimestampMillis(ppoint.getTimeStamp()) / 10000 * 10000;
+        long minuteTimestamp = convertToTimestampMillis(ppoint.getTimeStamp()) / 1000 * 1000;
         return minuteTimestamp + "_" + ppoint.getStakeId().split("\\+")[0];
     }
 
@@ -163,16 +182,39 @@ static class RedisSink extends RichSinkFunction<Tuple2<String, String>> {
 
    @Override
     public void open(Configuration parameters) {
-          LettuceConnectionFactory factory = new LettuceConnectionFactory("100.65.38.141", 6379);
+        // 创建集群配置
+        RedisClusterConfiguration clusterConfig = new RedisClusterConfiguration(
+            Arrays.asList(
+                "100.65.38.139:8001",
+                "100.65.38.140:8002",
+                "100.65.38.141:8003",
+                "100.65.38.142:8004",
+                "100.65.38.36:8005",
+                "100.65.38.37:8006"
+            )
+        );
+        clusterConfig.setPassword("123456");  // 设置密码
+
+        // 配置客户端选项
+        LettuceClientConfiguration clientConfig = LettuceClientConfiguration.builder()
+            .commandTimeout(Duration.ofSeconds(2))
+            .build();
+
+        // 创建集群连接工厂
+        LettuceConnectionFactory factory = new LettuceConnectionFactory(
+            clusterConfig,
+            clientConfig
+        );
         factory.afterPropertiesSet();
 
+        // 创建Redis模板
         redisTemplate = new RedisTemplate<>();
         redisTemplate.setConnectionFactory(factory);
         redisTemplate.setKeySerializer(new StringRedisSerializer());
-        // 使用 JSON 序列化器
         redisTemplate.setValueSerializer(new GenericJackson2JsonRedisSerializer());
         redisTemplate.afterPropertiesSet();
     }
+
 
     @Override
     public void invoke(Tuple2<String, String> value, Context context) {
@@ -180,7 +222,7 @@ static class RedisSink extends RichSinkFunction<Tuple2<String, String>> {
         redisTemplate.opsForValue().set(
             "v"+value.f0,
             value.f1,
-            120, TimeUnit.SECONDS
+            60, TimeUnit.SECONDS
         );
     }
 }
@@ -189,7 +231,7 @@ static class RedisSink extends RichSinkFunction<Tuple2<String, String>> {
     private static class VehicleAggregator extends KeyedProcessFunction<String, PathPoint, Tuple2<String, String>> {
         private transient MapState<Long, VehicleSeg> vehicleSegState;
         private transient ValueState<Boolean> timerState;
-        private final long timerInterval = 10 * 1000;
+        private final long timerInterval =  1000;
 
         private final StateTtlConfig vehiclettlConfig = StateTtlConfig
                 .newBuilder(Time.seconds(120))

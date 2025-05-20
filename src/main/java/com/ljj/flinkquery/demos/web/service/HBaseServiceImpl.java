@@ -76,12 +76,8 @@ public class HBaseServiceImpl implements HBaseService {
 
         return new TimeSpatialResult();
     }
-
-    @Override
-    public TimeSpatialResult getByTimeSpatial(Long startTime, Long endTime, String startMileage, String endMileage, Double Longitude1, Double Latitude1, Double Longitude2, Double Latitude2) throws IOException {
-//        Set<String> keys = redisTemplate.keys("v*");
-//        System.out.println(keys);
-        long t1 = System.currentTimeMillis();
+    public  TimeSpatialResult getRedis(Long startTime, Long endTime, String startMileage, String endMileage, Double Longitude1, Double Latitude1, Double Longitude2, Double Latitude2) throws IOException {
+          long t1 = System.currentTimeMillis();
             //region Description
 
             int shangxing1 = 0;
@@ -108,8 +104,8 @@ public class HBaseServiceImpl implements HBaseService {
             String zadaoInfo = "匝道查找信息：";
             int zdeltam = 0;
             int zalen = 0;
-            long st = startTime / 10000 * 10000;
-            long tt = endTime / 10000 * 10000 + 10000;
+            long st = startTime / 1000 * 1000;
+            long tt = endTime / 1000 * 1000 + 1000;
             String zaStartMil = "";
             String zaEndMil = "";
             TimeSpatialData kong = new TimeSpatialData(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
@@ -130,13 +126,14 @@ public class HBaseServiceImpl implements HBaseService {
             Map<Long, VehicleSeg> bm = new HashMap<>();
             Map<Long, VehicleSeg> cm = new HashMap<>();
             Map<Long, VehicleSeg> dm = new HashMap<>();
-Set<String> keys = redisTemplate.keys("v*");
-            System.out.println("keys: "+keys);
-        System.out.println(System.currentTimeMillis());
-        boolean b = Objects.equals(startMileage, "") && Objects.equals(endMileage, "");
-        if(startTime>System.currentTimeMillis()-120000&&endTime<System.currentTimeMillis()-9000) {
-            System.out.println("开始内存查找：http://100.65.38.139:8080/getByTimeSpatial?startTime=" + startTime + "&endTime=" + endTime + "&startMileage=" + startMileage + "&endMileage=" + endMileage + "&Longitude1=" + Longitude1 + "&Latitude1=" + Latitude1 + "&Longitude2=" + Longitude2 + "&Latitude2=" + Latitude1);
 
+        System.out.println("当前时间："+System.currentTimeMillis());
+        boolean b = Objects.equals(startMileage, "") && Objects.equals(endMileage, "");
+         System.out.println("开始内存查找：http://100.65.38.139:8080/getByTimeSpatial?startTime=" + startTime + "&endTime=" + endTime + "&startMileage=" + startMileage + "&endMileage=" + endMileage + "&Longitude1=" + Longitude1 + "&Latitude1=" + Latitude1 + "&Longitude2=" + Longitude2 + "&Latitude2=" + Latitude1);
+        if(startMileage.equals("123")){
+            Set<String> keys = redisTemplate.keys("v*");
+            System.out.println("keys: "+keys);
+        }
             if (b) {
                 try {
                     stakeAssign = new StakeAssignment("/home/ljj/sx_json.json");
@@ -178,8 +175,8 @@ if (Latitude1 > Latitude2) {
                 zaStartMil = ((index != -1) ? startSK.substring(2, index) : startSK);
                 index1 = endSK.indexOf("+");
                 zaEndMil = ((index1 != -1) ? endSK.substring(2, index1) : endSK);
-                System.out.println("AK  zaStartMil:  " + zaStartMil + "  zaEndMil:  " + zaEndMil);//zaStartMil:  0  zaEndMil:  0
-                System.out.println("AK  startSK:  " + startSK + "  endSK:  " + endSK);// startSK:  BK0+373.5  endSK:  BK0+688
+//                System.out.println("AK  zaStartMil:  " + zaStartMil + "  zaEndMil:  " + zaEndMil);//zaStartMil:  0  zaEndMil:  0
+//                System.out.println("AK  startSK:  " + startSK + "  endSK:  " + endSK);// startSK:  BK0+373.5  endSK:  BK0+688
                 //从起始时间到终止时间
                 startM = Integer.parseInt(zaStartMil);
                 endM = Integer.parseInt(zaEndMil);
@@ -192,10 +189,10 @@ if (Latitude1 > Latitude2) {
                 zdeltam += endM - startM;
 
                 zadaoInfo = zadaoInfo + "AK" + startM + "to AK" + endM + "," + st + " to " + tt + "  ";
-                for (long i = st; i < tt; i += 10000) {
+                for (long i = st; i < tt; i += 1000) {
                     for (int j = startM; j < endM; j++) {
                         String redisKey = "v" + i + "_AK" + j;
-                        System.out.println(redisKey);
+                        System.out.println("AK key: "+redisKey);
                         List<VehicleSeg> l = ge(redisTemplate, redisKey);
                         for (VehicleSeg vs : l) {
                             //判断是否有重复出
@@ -225,8 +222,8 @@ if (Latitude1 > Latitude2) {
                 zaStartMil = ((index != -1) ? startSK.substring(2, index) : startSK);
                 index1 = endSK.indexOf("+");
                 zaEndMil = ((index1 != -1) ? endSK.substring(2, index1) : endSK);
-                System.out.println("BK  zaStartMil:  " + zaStartMil + "  zaEndMil:  " + zaEndMil);
-                System.out.println("BK  startSK:  " + startSK + "  endSK:  " + endSK);
+//                System.out.println("BK  zaStartMil:  " + zaStartMil + "  zaEndMil:  " + zaEndMil);
+//                System.out.println("BK  startSK:  " + startSK + "  endSK:  " + endSK);
                 //从起始时间到终止时间
                 startM = Integer.parseInt(zaStartMil);
                 endM = Integer.parseInt(zaEndMil);
@@ -239,10 +236,11 @@ if (Latitude1 > Latitude2) {
                 zdeltam += endM - startM;
                 zadaoInfo = zadaoInfo + "BK" + startM + "to BK" + endM + "," + st + " to " + tt + "  ";
 
-                for (long i = st; i < tt; i += 10000) {
+                for (long i = st; i < tt; i += 1000) {
                     for (int j = startM; j < endM; j++) {
                         String redisKey = "v" + i + "_BK" + j;
-                        System.out.println(redisKey);
+                        System.out.println("BK key: "+redisKey);
+
                         List<VehicleSeg> l = ge(redisTemplate, redisKey);
 
                         for (VehicleSeg vs : l) {
@@ -274,8 +272,8 @@ if (Latitude1 > Latitude2) {
                 zaStartMil = ((index != -1) ? startSK.substring(2, index) : startSK);
                 index1 = endSK.indexOf("+");
                 zaEndMil = ((index1 != -1) ? endSK.substring(2, index1) : endSK);
-                System.out.println("CK  zaStartMil:  " + zaStartMil + "  zaEndMil:  " + zaEndMil);
-                System.out.println("CK  startSK:  " + startSK + "  endSK:  " + endSK);
+//                System.out.println("CK  zaStartMil:  " + zaStartMil + "  zaEndMil:  " + zaEndMil);
+//                System.out.println("CK  startSK:  " + startSK + "  endSK:  " + endSK);
                 //从起始时间到终止时间
                 startM = Integer.parseInt(zaStartMil);
                 endM = Integer.parseInt(zaEndMil);
@@ -287,10 +285,10 @@ if (Latitude1 > Latitude2) {
                 endM+=1;
                 zdeltam += endM - startM;
                 zadaoInfo = zadaoInfo + "CK" + startM + "to CK" + endM + "," + st + " to " + tt + "  ";
-                for (long i = st; i < tt; i += 10000) {
+                for (long i = st; i < tt; i += 1000) {
                     for (int j = startM; j < endM; j++) {
                         String redisKey = "v" + i + "_CK" + j;
-                        System.out.println(redisKey);
+                        System.out.println("CK key: "+redisKey);
                         List<VehicleSeg> l = ge(redisTemplate, redisKey);
                         for (VehicleSeg vs : l) {
                             //判断是否有重复出
@@ -318,8 +316,8 @@ if (Latitude1 > Latitude2) {
                 zaStartMil = ((index != -1) ? startSK.substring(2, index) : startSK);
                 index1 = endSK.indexOf("+");
                 zaEndMil = ((index1 != -1) ? endSK.substring(2, index1) : endSK);
-                System.out.println("DK  zaStartMil:  " + zaStartMil + "  zaEndMil:  " + zaEndMil);
-                System.out.println("DK  startSK:  " + startSK + "  endSK:  " + endSK);
+//                System.out.println("DK  zaStartMil:  " + zaStartMil + "  zaEndMil:  " + zaEndMil);
+//                System.out.println("DK  startSK:  " + startSK + "  endSK:  " + endSK);
                 //从起始时间到终止时间
                 startM = Integer.parseInt(zaStartMil);
                 endM = Integer.parseInt(zaEndMil);
@@ -331,10 +329,10 @@ if (Latitude1 > Latitude2) {
                 endM+=1;
                 zdeltam += endM - startM;
                 zadaoInfo = zadaoInfo + "DK" + startM + "to DK" + endM + "," + st + " to " + tt + "  ";
-                for (long i = st; i < tt; i += 10000) {
+                for (long i = st; i < tt; i += 1000) {
                     for (int j = startM; j < endM; j++) {
                         String redisKey = "v" + i + "_DK" + j;
-                        System.out.println(redisKey);
+                        System.out.println("DK key: "+redisKey);
                         List<VehicleSeg> l = ge(redisTemplate, redisKey);
 
                         for (VehicleSeg vs : l) {
@@ -422,7 +420,7 @@ if (Latitude1 > Latitude2) {
                     startM = temp;
                 }
 //                System.out.println("startMil:" + startMil + "   endMil:" + endMil + "  startM:" + startM + "   endm:" + endM + "st:" + st + "tt" + tt);//startMil:K1054   endMil:K1048  startM:1049   endm:1054
-                for (long i = st; i < tt; i += 10000) {
+                for (long i = st; i < tt; i += 1000) {
                     for (int j = startM; j < endM; j++) {
 
                         String redisKey = "v" + i + "_K" + j;
@@ -536,16 +534,75 @@ if (Latitude1 > Latitude2) {
             //region Description
             if (main && za) {
 
-                return new TimeSpatialResult(200, "内存查找————匝道、主路均有数据    查询用时：" + (System.currentTimeMillis() - t1) + "ms   查询时间段：" + convertFromTimestampMillis(st) + " to " + convertFromTimestampMillis(tt) + ",桩号：K" + startM + " to K" + endM + "  " + zadaoInfo+  "   查询主路路段数："+(endM-startM)+"   查询时段数："+(tt-st)/10000, tos, true);
+                return new TimeSpatialResult(200, "内存查找————匝道、主路均有数据    查询用时：" + (System.currentTimeMillis() - t1) + "ms   查询时间段：" + convertFromTimestampMillis(st) + " to " + convertFromTimestampMillis(tt) + ",桩号：K" + startM + " to K" + endM + "  " + zadaoInfo+  "   查询主路路段数："+(endM-startM)+"   查询时段数："+(tt-st)/1000, tos, true);
             }
-            else if (main && !za) return new TimeSpatialResult(200, "内存查找————主路有数据,匝道无数据,查询用时：" + (System.currentTimeMillis() - t1) + "ms   查询时间段：" + convertFromTimestampMillis(st) + " to " + convertFromTimestampMillis(tt) + ",桩号：K" + startM + " to K" + endM +"   查询主路路段数："+(endM-startM)+"   查询时段数："+(tt-st)/10000, tos, true);
-            else if (!main && za) return new TimeSpatialResult(200, "内存查找————主路无数据,匝道有数据,查询用时：" + (System.currentTimeMillis() - t1) + "ms   查询时间段：" + convertFromTimestampMillis(st) + " to " + convertFromTimestampMillis(tt) + ",桩号：K" + startM + " to K" + endM + "  " + zadaoInfo+"   查询时段数："+(tt-st)/10000, tos, true);
+            else if (main && !za) return new TimeSpatialResult(200, "内存查找————主路有数据,匝道无数据,查询用时：" + (System.currentTimeMillis() - t1) + "ms   查询时间段：" + convertFromTimestampMillis(st) + " to " + convertFromTimestampMillis(tt) + ",桩号：K" + startM + " to K" + endM +"   查询主路路段数："+(endM-startM)+"   查询时段数："+(tt-st)/1000, tos, true);
+            else if (!main && za)
+            {
+                System.out.println("result: "+tos);
+                return new TimeSpatialResult(200, "内存查找————主路无数据,匝道有数据,查询用时：" + (System.currentTimeMillis() - t1) + "ms   查询时间段：" + convertFromTimestampMillis(st) + " to " + convertFromTimestampMillis(tt) + ",桩号：K" + startM + " to K" + endM + "  " + zadaoInfo+"   查询时段数："+(tt-st)/1000, tos, true);
+            }
             else return new TimeSpatialResult(200, "内存查找————主路、匝道均无数据,查询用时：" + (System.currentTimeMillis() - t1) + "ms   查询时间段：" + convertFromTimestampMillis(st) + " to " + convertFromTimestampMillis(tt) + ",桩号：K" + startM + " to K" + endM + "  " + zadaoInfo, kong, true);
 
-        }else if(startTime>System.currentTimeMillis()-9000 || endTime>System.currentTimeMillis()-9000) {
-            return new TimeSpatialResult(200, "时间超过当前时间或内存统计时间" + (System.currentTimeMillis() - t1) + "ms   查询时间段：" + convertFromTimestampMillis(st) + " to " + convertFromTimestampMillis(tt) , kong, true);
-        }
-        else {
+
+    }
+    public TimeSpatialResult getHbase(Long startTime, Long endTime, String startMileage, String endMileage, Double Longitude1, Double Latitude1, Double Longitude2, Double Latitude2) throws IOException {
+        //        Set<String> keys = redisTemplate.keys("v*");
+//        System.out.println(keys);
+        long t1 = System.currentTimeMillis();
+            //region Description
+
+            int shangxing1 = 0;
+            int xiaxing2 = 0;//下行车辆数
+            double shangxingSum = 0;
+            double xiaxingSum = 0;//下行平均速度总和
+            String startMi = "";
+            String endMi = "";//桩号（完整版）
+            int startM = 0;
+            int endM = 0;//桩号中的数字
+            int upkeche = 0;
+            int uphuoche = 0;
+            int upweihuaping = 0;
+            int upzhongxinghuoche = 0;
+            int downkeche = 0;
+            int downhuoche = 0;
+            int downweihuaping = 0;
+            int downzhongxinghuoche = 0;
+            int zupkeche = 0;
+            int zuphuoche = 0;
+            int zupweihuaping = 0;
+            int zupzhongxinghuoche = 0;
+
+            String zadaoInfo = "匝道查找信息：";
+            int zdeltam = 0;
+            int zalen = 0;
+            long st = startTime / 1000 * 1000;
+            long tt = endTime / 1000 * 1000 + 1000;
+            String zaStartMil = "";
+            String zaEndMil = "";
+            TimeSpatialData kong = new TimeSpatialData(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+            TimeSpatialResult t2 = new TimeSpatialResult(200, "内存查找————无范围内数据,原因：桩号转换失败", kong, true);
+            TimeSpatialData tos = new TimeSpatialData();
+            boolean za = true;
+            boolean main = true;
+            StakeAssignment stakeAssign;
+            int index;
+            int index1;String startMil;String endMil;
+            double n = 0;
+            double sum = 0;
+            double zn = 0;
+            double zsum = 0;
+            Map<Long, VehicleSeg> mergedMap = new HashMap<>();
+            Map<Long, VehicleSeg> m = new HashMap<>();
+            Map<Long, VehicleSeg> am = new HashMap<>();
+            Map<Long, VehicleSeg> bm = new HashMap<>();
+            Map<Long, VehicleSeg> cm = new HashMap<>();
+            Map<Long, VehicleSeg> dm = new HashMap<>();
+//Set<String> keys = redisTemplate.keys("v*");
+//            System.out.println("keys: "+keys);
+        System.out.println(System.currentTimeMillis());
+        boolean b = Objects.equals(startMileage, "") && Objects.equals(endMileage, "");
+          {
             System.out.println("开始数据库查找，查找语句：http://100.65.38.139:8080/getByTimeSpatialWithID?startTime=" + startTime + "&endTime=" + endTime + "&startMileage=" + startMileage + "&endMileage=" + endMileage + "&Longitude1=" + Longitude1 + "&Latitude1=" + Latitude1 + "&Longitude2=" + Longitude2 + "&Latitude2=" + Latitude1);
             shangxing1 = 0;
             xiaxing2 = 0;//下行车辆数
@@ -576,7 +633,7 @@ if (Latitude1 > Latitude2) {
             zaStartMil = "";
             zaEndMil = "";
             kong = new TimeSpatialData(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
-            t2 = new TimeSpatialResult(200, "数据库查找————无范围内数据,原因：桩号转换失败", kong, true);
+            t2 = new TimeSpatialResult(200, "8001————无范围内数据,原因：桩号转换失败", kong, true);
             tos = new TimeSpatialData();
             za = true;
             main = true;
@@ -627,8 +684,8 @@ if (Latitude1 > Latitude2) {
                 zaStartMil = ((index != -1) ? startSK.substring(2, index) : startSK);
                 index1 = endSK.indexOf("+");
                 zaEndMil = ((index1 != -1) ? endSK.substring(2, index1) : endSK);
-                System.out.println("AK  zaStartMil:  " + zaStartMil + "  zaEndMil:  " + zaEndMil);
-                System.out.println("AK  startSK:  " + startSK + "  endSK:  " + endSK);
+//                System.out.println("AK  zaStartMil:  " + zaStartMil + "  zaEndMil:  " + zaEndMil);
+//                System.out.println("AK  startSK:  " + startSK + "  endSK:  " + endSK);
                 //从起始时间到终止时间
                 startM = Integer.parseInt(zaStartMil);
                 endM = Integer.parseInt(zaEndMil);
@@ -669,8 +726,8 @@ if (Latitude1 > Latitude2) {
                 zaStartMil = ((index != -1) ? startSK.substring(2, index) : startSK);
                 index1 = endSK.indexOf("+");
                 zaEndMil = ((index1 != -1) ? endSK.substring(2, index1) : endSK);
-                System.out.println("BK  zaStartMil:  " + zaStartMil + "  zaEndMil:  " + zaEndMil);
-                System.out.println("BK  startSK:  " + startSK + "  endSK:  " + endSK);
+//                System.out.println("BK  zaStartMil:  " + zaStartMil + "  zaEndMil:  " + zaEndMil);
+//                System.out.println("BK  startSK:  " + startSK + "  endSK:  " + endSK);
                 //从起始时间到终止时间
                 startM = Integer.parseInt(zaStartMil);
                 endM = Integer.parseInt(zaEndMil);
@@ -711,8 +768,8 @@ if (Latitude1 > Latitude2) {
                 zaStartMil = ((index != -1) ? startSK.substring(2, index) : startSK);
                 index1 = endSK.indexOf("+");
                 zaEndMil = ((index1 != -1) ? endSK.substring(2, index1) : endSK);
-                System.out.println("CK  zaStartMil:  " + zaStartMil + "  zaEndMil:  " + zaEndMil);
-                System.out.println("CK  startSK:  " + startSK + "  endSK:  " + endSK);
+//                System.out.println("CK  zaStartMil:  " + zaStartMil + "  zaEndMil:  " + zaEndMil);
+//                System.out.println("CK  startSK:  " + startSK + "  endSK:  " + endSK);
                 //从起始时间到终止时间
                 startM = Integer.parseInt(zaStartMil);
                 endM = Integer.parseInt(zaEndMil);
@@ -753,8 +810,8 @@ if (Latitude1 > Latitude2) {
                 zaStartMil = ((index != -1) ? startSK.substring(2, index) : startSK);
                 index1 = endSK.indexOf("+");
                 zaEndMil = ((index1 != -1) ? endSK.substring(2, index1) : endSK);
-                System.out.println("DK  zaStartMil:  " + zaStartMil + "  zaEndMil:  " + zaEndMil);
-                System.out.println("DK  startSK:  " + startSK + "  endSK:  " + endSK);
+//                System.out.println("DK  zaStartMil:  " + zaStartMil + "  zaEndMil:  " + zaEndMil);
+//                System.out.println("DK  startSK:  " + startSK + "  endSK:  " + endSK);
                 //从起始时间到终止时间
                 startM = Integer.parseInt(zaStartMil);
                 endM = Integer.parseInt(zaEndMil);
@@ -958,11 +1015,115 @@ if (Latitude1 > Latitude2) {
                 return new TimeSpatialResult(200, "数据库查找————匝道、主路均有数据,查询用时：" + (System.currentTimeMillis() - t1) + "ms   查询时间段：" + convertFromTimestampMillis(st) + " to " + convertFromTimestampMillis(tt) + ",桩号：K" + startM + " to K" + endM + "  " + zadaoInfo+"   查询主路路段数："+(endM-startM)+"   查询时段数："+(tt-st)/60000, tos, true);
             } else if (main && !za)
                 return new TimeSpatialResult(200, "数据库查找————主路有数据,匝道无数据,查询用时：" + (System.currentTimeMillis() - t1) + "ms   查询时间段：" + convertFromTimestampMillis(st) + " to " + convertFromTimestampMillis(tt) + ",桩号：K" + startM + " to K" + endM +"   查询主路路段数："+(endM-startM)+"   查询时段数："+(tt-st)/60000, tos, true);
-            else if (!main && za) return new TimeSpatialResult(200, "数据库查找————主路无数据,匝道有数据,查询用时：" + (System.currentTimeMillis() - t1) + "ms   查询时间段：" + convertFromTimestampMillis(st) + " to " + convertFromTimestampMillis(tt) + ",桩号：K" + startM + " to K" + endM + "  " + zadaoInfo, kong, true);
+            else if (!main && za)
+            {
+                System.out.println("result: "+tos);
+                return new TimeSpatialResult(200, "数据库查找————主路无数据,匝道有数据,查询用时：" + (System.currentTimeMillis() - t1) + "ms   查询时间段：" + convertFromTimestampMillis(st) + " to " + convertFromTimestampMillis(tt) + ",桩号：K" + startM + " to K" + endM + "  " + zadaoInfo, kong, true);
+            }
             else return new TimeSpatialResult(200, "数据库查找————主路、匝道均无数据,查询用时：" + (System.currentTimeMillis() - t1) + "ms   查询时间段：" + convertFromTimestampMillis(st) + " to " + convertFromTimestampMillis(tt) + ",桩号：K" + startM + " to K" + endM + "  " + zadaoInfo, kong, true);
         }
     }
+    @Override
+    public TimeSpatialResult getByTimeSpatial(Long startTime, Long endTime, String startMileage, String endMileage, Double Longitude1, Double Latitude1, Double Longitude2, Double Latitude2) throws IOException {
+        long timeSplit=(System.currentTimeMillis()-120000)/10000*10000;
+        if(startTime>timeSplit) {
+            return getRedis(startTime, endTime, startMileage, endMileage, Longitude1, Latitude1, Longitude2, Latitude2);
+        }else if(endTime>timeSplit&startTime<timeSplit){
+            return new TimeSpatialResult(200,"内存、数据库同时查询",mergeRH(getRedis(timeSplit,endTime, startMileage, endMileage, Longitude1, Latitude1, Longitude2, Latitude2).getData(),getHbase(startTime,timeSplit, startMileage, endMileage, Longitude1, Latitude1, Longitude2, Latitude2).getData()),true);
+        }else if(endTime<timeSplit){
+            return getHbase(startTime, endTime, startMileage, endMileage, Longitude1, Latitude1, Longitude2, Latitude2);
+        }
+            return new TimeSpatialResult(200,"起始时间必须大于终止时间",null,true);
+    }
+  public static TimeSpatialData mergeRH(TimeSpatialData d1, TimeSpatialData d2) {
+    TimeSpatialData merged = new TimeSpatialData();
 
+    // 合并计数类字段（直接相加）
+    merged.setTotalCount(d1.getTotalCount() + d2.getTotalCount());
+    merged.setUpCount(d1.getUpCount() + d2.getUpCount());
+    merged.setDownCount(d1.getDownCount() + d2.getDownCount());
+
+    merged.setUpBusCount(d1.getUpBusCount() + d2.getUpBusCount());
+    merged.setUpTrackCount(d1.getUpTrackCount() + d2.getUpTrackCount());
+    merged.setUpChemicalCount(d1.getUpChemicalCount() + d2.getUpChemicalCount());
+    merged.setUpHeavyTrackCount(d1.getUpHeavyTrackCount() + d2.getUpHeavyTrackCount());
+
+    merged.setDownBusCount(d1.getDownBusCount() + d2.getDownBusCount());
+    merged.setDownTrackCount(d1.getDownTrackCount() + d2.getDownTrackCount());
+    merged.setDownChemicalCount(d1.getDownChemicalCount() + d2.getDownChemicalCount());
+    merged.setDownHeavyTrackCount(d1.getDownHeavyTrackCount() + d2.getDownHeavyTrackCount());
+
+    // 匝道计数类字段（直接相加）
+    merged.setZaBusCount(d1.getZaBusCount() + d2.getZaBusCount());
+    merged.setZaTrackCount(d1.getZaTrackCount() + d2.getZaTrackCount());
+    merged.setZaChemicalCount(d1.getZaChemicalCount() + d2.getZaChemicalCount());
+    merged.setZaHeavyTrackCount(d1.getZaHeavyTrackCount() + d2.getZaHeavyTrackCount());
+
+    // 平均速度（加权平均）
+    merged.setTotalAverageSpeed(calculateWeightedAverage(
+        d1.getTotalAverageSpeed(), d1.getTotalCount(),
+        d2.getTotalAverageSpeed(), d2.getTotalCount()
+    ));
+    merged.setUpAverageSpeed(calculateWeightedAverage(
+        d1.getUpAverageSpeed(), d1.getUpCount(),
+        d2.getUpAverageSpeed(), d2.getUpCount()
+    ));
+    merged.setDownAverageSpeed(calculateWeightedAverage(
+        d1.getDownAverageSpeed(), d1.getDownCount(),
+        d2.getDownAverageSpeed(), d2.getDownCount()
+    ));
+
+    // 匝道平均速度（加权平均）
+    merged.setZaAverageSpeed(calculateWeightedAverage(
+        d1.getZaAverageSpeed(), (int) d1.getZaCount(),
+        d2.getZaAverageSpeed(), (int) d2.getZaCount()
+    ));
+
+    // 交通指标（简单平均，实际需根据业务逻辑调整）
+    merged.setTrafficSaturation((d1.getTrafficSaturation() + d2.getTrafficSaturation()) / 2);
+    merged.setVehicleDensity((d1.getVehicleDensity() + d2.getVehicleDensity()) / 2);
+
+    // 拥塞指数（简单平均）
+    merged.setTotalCongestionIndex((d1.getTotalCongestionIndex() + d2.getTotalCongestionIndex()) / 2);
+    merged.setUpCongestionIndex((d1.getUpCongestionIndex() + d2.getUpCongestionIndex()) / 2);
+    merged.setDownCongestionIndex((d1.getDownCongestionIndex() + d2.getDownCongestionIndex()) / 2);
+
+    // 客货比（重新计算）
+    merged.setBusTrackVal(calculateRatio(
+        merged.getUpBusCount() + merged.getDownBusCount(),
+        merged.getUpTrackCount() + merged.getDownTrackCount()
+    ));
+    merged.setUpBusTrackVal(calculateRatio(
+        merged.getUpBusCount(),
+        merged.getUpTrackCount()
+    ));
+    merged.setDownBusTrackVal(calculateRatio(
+        merged.getDownBusCount(),
+        merged.getDownTrackCount()
+    ));
+
+    // 匝道交通指标（简单平均）
+    merged.setZaTrafficSaturation((d1.getZaTrafficSaturation() + d2.getZaTrafficSaturation()) / 2);
+    merged.setZaVehicleDensity((d1.getZaVehicleDensity() + d2.getZaVehicleDensity()) / 2);
+    merged.setZaCongestionIndex((d1.getZaCongestionIndex() + d2.getZaCongestionIndex()) / 2);
+    merged.setZaBusTrackVal(calculateRatio(
+        merged.getZaBusCount(),
+        merged.getZaTrackCount()
+    ));
+
+    return merged;
+}
+
+// 计算加权平均值
+private static double calculateWeightedAverage(double avg1, int count1, double avg2, int count2) {
+    int total = count1 + count2;
+    return total > 0 ? (avg1 * count1 + avg2 * count2) / total : 0;
+}
+
+// 计算比值（防止除以零）
+private static double calculateRatio(int numerator, int denominator) {
+    return denominator != 0 ? (double) numerator / denominator : 0;
+}
     //隔一百米
     @Override
     public List<CongestionEvent> getCrowdedInfo(Long startTime, Long endTime, String startMileage, String endMileage) throws IOException {
