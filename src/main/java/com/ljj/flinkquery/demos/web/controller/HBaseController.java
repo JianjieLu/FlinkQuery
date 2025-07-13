@@ -1,9 +1,7 @@
 package com.ljj.flinkquery.demos.web.controller;
 
+import com.ljj.flinkquery.demos.entity.*;
 import com.ljj.flinkquery.demos.entity.TrafficEventUtils.*;
-import com.ljj.flinkquery.demos.entity.CrowdedInfo;
-import com.ljj.flinkquery.demos.entity.TimeSpatialResult;
-import com.ljj.flinkquery.demos.entity.TrafficEventUtils;
 import com.ljj.flinkquery.demos.web.service.HBaseService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -74,8 +72,38 @@ public class HBaseController {
           }
           return res;
       }
+   @PostMapping("/getBatchSectionalFlow")
+    public SectionalBatchFlowResult getBatchSectionalFlow(
+        @RequestBody List<SectionalFlowQuery> queries) {
 
+        return hbaseService.getBatchSectionalFlow(queries);
+    }
+   @RequestMapping(value = "/getSectionalFlow", method = RequestMethod.GET)
+      @ResponseBody
+      //@RequestParam("tableName") String tableName,
+    public SectionalFlowResult getSectionalFlow(@RequestParam("startTime") Long startTime, @RequestParam("endTime") Long endTime, @RequestParam(value = "startMileage",required = false) String startMileage, @RequestParam(value = "endMileage",required = false) String endMileage, @RequestParam(value = "Longitude1",required = false)Double Longitude1, @RequestParam(value = "Latitude1",required = false) Double Latitude1, @RequestParam(value = "Longitude2",required = false)Double Longitude2, @RequestParam(value = "Latitude2",required = false)Double Latitude2,@RequestParam(value="level",defaultValue = "0") Integer level) {
+        SectionalFlowResult res;
 
+          try {
+              res=hbaseService.getSectionalFlow(startTime, endTime,startMileage, endMileage,Longitude1, Latitude1,Longitude2, Latitude2,level);
+          } catch (Exception e) {
+              throw new RuntimeException(e);
+          }
+          return res;
+      }
+         @RequestMapping(value = "/getStFlow", method = RequestMethod.GET)
+      @ResponseBody
+      //@RequestParam("tableName") String tableName,
+    public jizhanResult getStFlow(@RequestParam("stId") String stId,@RequestParam("startTime") Long startTime, @RequestParam("endTime") Long endTime) {
+        jizhanResult res;
+
+          try {
+              res=hbaseService.getStFlow(stId,startTime, endTime);
+          } catch (Exception e) {
+              throw new RuntimeException(e);
+          }
+          return res;
+      }
 
       @RequestMapping(value = "/getByTimeSpatial", method = RequestMethod.GET)
       @ResponseBody

@@ -14,7 +14,7 @@ import java.util.Arrays;
 public class putOne {
     public static void main(String[] args) throws IOException {
          Configuration conf = HBaseConfiguration.create();
-        conf.set("hbase.zookeeper.quorum", "100.65.38.139,100.65.38.140,100.65.38.141");  // Zookeeper 地址
+        conf.set("hbase.zookeeper.quorum", "100.65.38.139,100.65.38.140,100.65.38.141,100.65.38.142,100.65.38.36,100.65.38.37,100.65.38.38");  // Zookeeper 地址
         conf.set("hbase.zookeeper.property.clientPort", "2181");  // Zookeeper 端口
         // 获取连接
         try (Connection connection = ConnectionFactory.createConnection(conf);

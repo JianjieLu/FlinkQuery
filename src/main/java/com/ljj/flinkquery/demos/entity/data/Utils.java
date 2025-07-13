@@ -122,8 +122,13 @@ public class Utils {
         private Integer originalType = null;
         private Integer originalColor = null;
         private String specialFlag = "";
+        private double weight;
+        private eventInfo eventinfo;
     }
+ @Data
+    public static class eventInfo implements Serializable{
 
+    }
     /**
      * VehicleMapping 存储历史匹配记录
      */

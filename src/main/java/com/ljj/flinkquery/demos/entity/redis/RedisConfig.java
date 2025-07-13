@@ -17,6 +17,7 @@ import org.springframework.data.redis.serializer.StringRedisSerializer;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.Arrays;
+import java.util.Map;
 
 @Configuration
 public class RedisConfig {
@@ -41,7 +42,7 @@ public class RedisConfig {
         return new LettuceConnectionFactory(clusterConfig, clientConfig);
     }
 
-    @Bean
+    @Bean("redisTemplate")
     public RedisTemplate<String, String> redisTemplate() {
         RedisTemplate<String, String> template = new RedisTemplate<>();
         template.setConnectionFactory(redisConnectionFactory());
@@ -49,4 +50,23 @@ public class RedisConfig {
         template.setValueSerializer(new StringRedisSerializer());
         return template;
     }
+
+    @Bean("redisTemplate1")
+    public RedisTemplate<String, String> redisTemplate1() {
+        RedisTemplate<String, String> template = new RedisTemplate<>();
+        template.setConnectionFactory(redisConnectionFactory());
+        template.setKeySerializer(new StringRedisSerializer());
+        template.setValueSerializer(new StringRedisSerializer());
+        return template;
+    }
+
+public static Map<String,String> sda;
+//       @Bean
+//    public RedisTemplate<String, String> redisTemplate() {
+//        RedisTemplate<String, String> template = new RedisTemplate<>();
+//        template.setConnectionFactory(redisConnectionFactory());
+//        template.setKeySerializer(new StringRedisSerializer());
+//        template.setValueSerializer(new StringRedisSerializer());
+//        return template;
+//    }
 }

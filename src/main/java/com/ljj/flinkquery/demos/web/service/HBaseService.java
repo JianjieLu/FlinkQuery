@@ -1,8 +1,6 @@
 package com.ljj.flinkquery.demos.web.service;
+import com.ljj.flinkquery.demos.entity.*;
 import com.ljj.flinkquery.demos.entity.TrafficEventUtils.*;
-
-import com.ljj.flinkquery.demos.entity.CrowdedInfo;
-import com.ljj.flinkquery.demos.entity.TimeSpatialResult;
 
 import java.io.IOException;
 import java.util.List;
@@ -18,5 +16,8 @@ public interface HBaseService {
     List<CongestionEvent> getCrowdedInfo(Long startTime, Long endTime, String startMileage, String endMileage) throws IOException;
     CongestionEvent getCongestionEventById(int eventId);
     List<CongestionEventResult> getCongestionEvent(Long startTime, Long endTime, Integer startMileage, Integer endMileage, Double Longitude1, Double Latitude1, Double Longitude2, Double Latitude2,int direction) throws IOException;
+    SectionalFlowResult getSectionalFlow(Long startTime, Long endTime, String startMileage, String endMileage, Double Longitude1, Double Latitude1, Double Longitude2, Double Latitude2, Integer level) throws IOException;
+    jizhanResult getStFlow(String stId,Long startTime,Long endTime) throws IOException;
+    SectionalBatchFlowResult getBatchSectionalFlow(List<SectionalFlowQuery> queries);
 
 }

@@ -13,6 +13,7 @@ public class VehicleSeg {
     private int direction;
     private int pointSum;
     private Integer originalType;
+    private Integer vehicleType;
     private String specialFlag;
     private int laneNo;
     private double averageSpeed;
