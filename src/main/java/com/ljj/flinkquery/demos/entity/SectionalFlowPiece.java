@@ -5,14 +5,13 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.util.List;
-import java.util.Map;
-
 @AllArgsConstructor
     @NoArgsConstructor
     @Getter
     @Setter
-public class SectionalFlowData {
-    List<SectionalFlowDat>sectionalFlowDats;
-    private SectionalFlowQuery inputParams;
+public class SectionalFlowPiece {
+    int time;
+	int total;
+	int minibus;
+	int truck;
 }

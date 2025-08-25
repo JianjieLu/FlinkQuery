@@ -78,6 +78,7 @@ public class HBaseController {
 
         return hbaseService.getBatchSectionalFlow(queries);
     }
+
    @RequestMapping(value = "/getSectionalFlow", method = RequestMethod.GET)
       @ResponseBody
       //@RequestParam("tableName") String tableName,

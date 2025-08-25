@@ -6,16 +6,10 @@ import com.ljj.flinkquery.demos.web.impl.myTools;
 import javafx.util.Pair;
 import org.apache.flink.api.common.eventtime.SerializableTimestampAssigner;
 import org.apache.flink.api.common.functions.AggregateFunction;
-import org.apache.flink.api.java.tuple.Tuple5;
-import org.apache.flink.connector.kafka.sink.KafkaRecordSerializationSchema;
-import org.apache.flink.connector.kafka.sink.KafkaSink;
-import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.windowing.assigners.TumblingEventTimeWindows;
 import org.apache.hadoop.hbase.TableName;
 import org.apache.hadoop.hbase.client.*;
 import org.apache.hadoop.hbase.util.Bytes;
-import org.json.JSONArray;
-import org.json.JSONException;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import com.alibaba.fastjson2.JSON;
@@ -56,7 +50,6 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.concurrent.locks.ReentrantLock;
 
 import static com.ljj.flinkquery.demos.entity.data.Utils.*;
 
@@ -66,18 +59,7 @@ import static com.ljj.flinkquery.demos.entity.data.Utils.convertToTimestampMilli
 import static com.ljj.flinkquery.demos.web.impl.edu.tableOps.totalOps.*;
 
 @SpringBootApplication
-public class FlinkQueryApplication {
-
-
-
-        private static final Map<String, List<Tuple5<Double, Double, Integer, Integer, Double>>> map = new ConcurrentHashMap<>();
-        private static final Map<String, String> mapTimeSeg = new ConcurrentHashMap<>();
-        private static final Map<String, Integer> mapType = new ConcurrentHashMap<>();
-        private static final Map<String, Long> lastSeenTime = new ConcurrentHashMap<>();
-        private static final Map<String, Long> lastSampleTime = new ConcurrentHashMap<>();
-        private static final ReentrantLock stateLock = new ReentrantLock();
-
-
+public class FlinkQueryApplication1 {
 
     public static final ConcurrentHashMap<String, String> resultMap = new ConcurrentHashMap<>();
     public static RedisTemplate<String, String> redisTemplate;//60s内所有数据
@@ -108,7 +90,18 @@ public class FlinkQueryApplication {
         String groupId = "flink-group-SegCar"; // 消费者组ID
 
         // 主题列表
-   List<String> topics = Arrays.asList("fiberData1", "fiberData2", "fiberData3", "fiberData4", "fiberData5", "fiberData6", "fiberData7", "fiberData8", "fiberData9", "fiberData10", "fiberData11");
+        List<String> topics = Arrays.asList(
+                "fiberData1",
+                "fiberData2",
+                "fiberData3",
+                "fiberData4",
+                "fiberData5",
+                "fiberData6",
+                "fiberData7",
+                "fiberData8",
+                "fiberData9",
+                "fiberData10",
+                "fiberData11");
 
         // 初始化第一个 KafkaSource
         KafkaSource<String> kafkaSource = KafkaSource.<String>builder()
@@ -122,17 +115,6 @@ public class FlinkQueryApplication {
 
         // 创建第一个数据流
         DataStream<String> unionStream = env.fromSource(kafkaSource, WatermarkStrategy.noWatermarks(), "Kafka Sources Save");
-
-           KafkaSink<String> primarySink = KafkaSink.<String>builder()
-                .setBootstrapServers(brokers)
-                .setRecordSerializer(KafkaRecordSerializationSchema.builder()
-                        .setTopic("trajectoryoutput")
-                        .setValueSerializationSchema(new SimpleStringSchema())
-                        .build())
-                .build();
-        SingleOutputStreamOperator<String> primaryProcessed = unionStream
-                .flatMap(new PrimaryTrajectoryProcessor())
-                .name("Primary Trajectory Processor");
 
  DataStream<PathPoint> flatMapStream = unionStream
     .flatMap(new FlatMapFunction<String, PathPoint>() {
@@ -150,16 +132,6 @@ public class FlinkQueryApplication {
                         // 处理新车辆计数
                         VehicleCounter.processVehicle(ppoint);
 //                        System.out.println("c");
-                         long eventTime = convertToTimestampMillis(ppoint.getTimeStamp());
-                                    int direction = ppoint.getDirection();
-                                    int[] current;
-                                    int[] next = new int[2];
-                                    do {
-                                        current = yearToDateTraffic.get();
-                                        next[0] = current[0] + (direction == 1 ? 1 : 0);
-                                        next[1] = current[1] + (direction == 2 ? 1 : 0);
-                                    } while (!yearToDateTraffic.compareAndSet(current, next));
-
                         out.collect(ppoint);
                     }
                 }
@@ -229,7 +201,6 @@ public class FlinkQueryApplication {
 
         // 添加内存存储Sink
         processedStream.addSink(new RedisSink());
-        primaryProcessed.sinkTo(primarySink).name("Primary Output Sink");
 
         // 执行任务
         env.execute("Flink STCar to MemoryMap");
@@ -240,249 +211,71 @@ public class FlinkQueryApplication {
 
 
 
- private static class PrimaryTrajectoryProcessor implements FlatMapFunction<String, String> {
-        private static final long SESSION_TIMEOUT_MS = 10000;
-        private static final long SAMPLING_INTERVAL_MS = 1000;
-
-        // 状态存储 (隔离于其他处理器)
-
-
-        @Override
-        public void flatMap(String jsonString, Collector<String> out) {
-            stateLock.lock();
-            try {
-                org.json.JSONObject jsonObject = new org.json.JSONObject(jsonString);
-                long timeObs = parseTimestamp(jsonObject.getString("timeStamp"));
-                JSONArray tdataArray = jsonObject.getJSONArray("pathList");
-
-                for (int i = 0; i < tdataArray.length(); i++) {
-                    org.json.JSONObject tdataObject = tdataArray.getJSONObject(i);
-                    String plateNo = tdataObject.getString("plateNo");
-                    String id = String.valueOf(tdataObject.getLong("id"));
-
-                    lastSeenTime.put(id, timeObs);
-                    long lastSample = lastSampleTime.getOrDefault(id, 0L);
-
-                    if (timeObs - lastSample >= SAMPLING_INTERVAL_MS) {
-                        if (!map.containsKey(id)) {
-                            initializeNewVehicle(id, plateNo, tdataObject, timeObs);
-                        } else {
-                            updateVehicleTrajectory(id, tdataObject);
-                        }
-                        lastSampleTime.put(id, timeObs);
-                    }
-                }
-
-                processTimeoutVehicles(timeObs, out);
-            } catch (Exception e) {
-                e.printStackTrace();
-            } finally {
-                stateLock.unlock();
-            }
-        }
-
-        private long parseTimestamp(String timestampStr) throws Exception {
-            try {
-                DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss:SSS");
-                LocalDateTime localDateTime = LocalDateTime.parse(timestampStr, formatter);
-                return localDateTime.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
-            } catch (Exception e) {
-                DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss:SS");
-                LocalDateTime localDateTime = LocalDateTime.parse(timestampStr, formatter);
-                return localDateTime.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
-            }
-        }
-
-        private void initializeNewVehicle(String id, String plateNo, org.json.JSONObject tdata, long timestamp) {
-            mapTimeSeg.put(id, timestamp + "-" + plateNo + "-" + id);
-            mapType.put(id, tdata.getInt("vehicleType"));
-
-            List<Tuple5<Double, Double, Integer, Integer, Double>> list = new ArrayList<>();
-            list.add(new Tuple5<>(
-                    tdata.getDouble("longitude"),
-                    tdata.getDouble("latitude"),
-                    tdata.getInt("laneNo"),
-                    getDirectionSafely(tdata),
-                    tdata.getDouble("speed")
-            ));
-            map.put(id, list);
-        }
-
-        private void updateVehicleTrajectory(String id, org.json.JSONObject tdata) {
-            List<Tuple5<Double, Double, Integer, Integer, Double>> list = map.get(id);
-            list.add(new Tuple5<>(
-                    tdata.getDouble("longitude"),
-                    tdata.getDouble("latitude"),
-                    tdata.getInt("laneNo"),
-                    getDirectionSafely(tdata),
-                    tdata.getDouble("speed")
-            ));
-        }
-
-        private void processTimeoutVehicles(long currentTime, Collector<String> out) {
-            Set<String> timeoutIds = new HashSet<>();
-            for (Map.Entry<String, Long> entry : lastSeenTime.entrySet()) {
-                if (currentTime - entry.getValue() > SESSION_TIMEOUT_MS) {
-                    timeoutIds.add(entry.getKey());
-                }
-            }
-
-            for (String id : timeoutIds) {
-                org.json.JSONObject trajectoryJson = new org.json.JSONObject();
-                trajectoryJson.put("timeSeg", mapTimeSeg.get(id));
-                trajectoryJson.put("type", mapType.get(id));
-                trajectoryJson.put("latestTime", lastSeenTime.get(id));
-                trajectoryJson.put("eventList", new JSONArray());
-
-          // 获取轨迹点数据
-                List<Tuple5<Double, Double, Integer, Integer, Double>> points = map.get(id);
-                List<TrajectoryPoint> trajectoryPoints = new ArrayList<>();
-                if (points != null) {
-                    for (Tuple5<Double, Double, Integer, Integer, Double> point : points) {
-                        trajectoryPoints.add(new TrajectoryPoint(point.f0,point.f1,point.f2,point.f3,point.f4));
-                    }
-                }
-                trajectoryJson.put("trajectory", trajectoryPoints);
-
-                out.collect(trajectoryJson.toString());
-                cleanupVehicle(id);
-            }
-        }
-
-        private void cleanupVehicle(String id) {
-            map.remove(id);
-            mapTimeSeg.remove(id);
-            mapType.remove(id);
-            lastSeenTime.remove(id);
-            lastSampleTime.remove(id);
-        }
-
-        // 安全获取方法
-        private int getDirectionSafely(org.json.JSONObject tdata) {
-            try { return tdata.getInt("direction"); }
-            catch (JSONException e) { return -1; }
-        }
-    }
 
 
    public static class VehicleCounter {
     // 使用 ConcurrentHashMap 记录车辆最后出现日期
     private static final Map<Long, LocalDate> vehicleLastSeen = new ConcurrentHashMap<>();
+
     // 每日计数器（日期字符串 -> 计数）
     private static final Map<String, AtomicInteger> dailyCounters = new ConcurrentHashMap<>();
+
     // 当前日期（根据事件时间）
     private static volatile String currentDate = LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE);
 
-    // 年度累计流量计数器（上行/下行）
-    private static final AtomicInteger upTotal = new AtomicInteger(0);
-    private static final AtomicInteger downTotal = new AtomicInteger(0);
-    // 车辆方向缓存（防止重复计数）
-    private static final ConcurrentHashMap<Long, Integer> directionCache = new ConcurrentHashMap<>();
-    // 方向缓存清理阈值（30天）
-    private static final int CACHE_EXPIRE_DAYS = 30;
+public static void processVehicle(PathPoint point) {
+    long vehicleId = point.getId();
+    long eventTimeMillis = convertToTimestampMillis(point.getTimeStamp());
+    LocalDate eventDate = Instant.ofEpochMilli(eventTimeMillis)
+                                .atZone(ZoneId.systemDefault())
+                                .toLocalDate();
+    String eventDateStr = eventDate.format(DateTimeFormatter.BASIC_ISO_DATE);
 
-    public static void processVehicle(PathPoint point) {
-        long vehicleId = point.getId();
-        int direction = point.getDirection();
-        long eventTimeMillis = convertToTimestampMillis(point.getTimeStamp());
-        LocalDate eventDate = Instant.ofEpochMilli(eventTimeMillis)
-                                    .atZone(ZoneId.systemDefault())
-                                    .toLocalDate();
-        String eventDateStr = eventDate.format(DateTimeFormatter.BASIC_ISO_DATE);
-
-        // 处理日期切换
-        if (!eventDateStr.equals(currentDate)) {
-            currentDate = eventDateStr;
-            dailyCounters.put(currentDate, new AtomicInteger(0));
-            Pair<Integer, Integer> current = todayTotal.get();
-            todayTotal.set(new Pair<>(0, current.getValue()));
-        }
-
-        // 更新当日计数器
-        AtomicInteger counter = dailyCounters.get(currentDate);
-        if (vehicleLastSeen.getOrDefault(vehicleId, LocalDate.MIN).isBefore(eventDate)) {
-            vehicleLastSeen.put(vehicleId, eventDate);
-            int newCount = counter.incrementAndGet();
-
-            // 更新今日总数
-            while (true) {
-                Pair<Integer, Integer> current = todayTotal.get();
-                if (todayTotal.compareAndSet(current,  new Pair<>(
-                    newCount,
-                    current.getValue()
-                ))) {
-                    break;
-                }
-            }
-        }
-
-        // 更新年度累计流量（确保每辆车每年只计数一次）
-        if (direction == 1 || direction == 2) {
-            // 检查是否已计数
-            Integer cachedDirection = directionCache.get(vehicleId);
-            if (cachedDirection == null || cachedDirection != direction) {
-                // 更新缓存
-                directionCache.put(vehicleId, direction);
-
-                // 原子更新计数器
-                if (direction == 1) {
-                    upTotal.incrementAndGet();
-                } else {
-                    downTotal.incrementAndGet();
-                }
-            }
-        }
-
+    // 处理日期切换
+    if (!eventDateStr.equals(currentDate)) {
+        currentDate = eventDateStr;
+        dailyCounters.put(currentDate, new AtomicInteger(0)); // 新日期计数器
+        // 重置今日计数 - 使用Pair的正确访问方法
+        Pair<Integer, Integer> current = todayTotal.get();
+        todayTotal.set(new Pair<>(0, current.getValue())); // 保留处理时间
     }
-private static final ScheduledExecutorService dateChecker = Executors.newSingleThreadScheduledExecutor();
 
-static {
-    // 每分钟检查日期切换
-    dateChecker.scheduleAtFixedRate(() -> {
-        String today = LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE);
-        if (!today.equals(currentDate)) {
-            synchronized (VehicleCounter.class) {
-                if (!today.equals(currentDate)) {
-                    currentDate = today;
-                    dailyCounters.put(currentDate, new AtomicInteger(0));
-                    todayTotal.set(new Pair<>(0, todayTotal.get().getValue()));
-                }
-            }
+    AtomicInteger counter = dailyCounters.get(currentDate);
+
+   if (vehicleLastSeen.getOrDefault(vehicleId, LocalDate.MIN).isBefore(eventDate)) {
+    vehicleLastSeen.put(vehicleId, eventDate);
+    int newCount = counter.incrementAndGet(); // 获取最新计数
+
+    // 使用最新计数更新todayTotal
+    while (true) {
+        Pair<Integer, Integer> current = todayTotal.get();
+        Pair<Integer, Integer> newPair = new Pair<>(
+            newCount,              // 直接使用计数器的最新值
+            current.getValue()      // 保留处理时间
+        );
+        if (todayTotal.compareAndSet(current, newPair)) {
+            break;
         }
-    }, 0, 1, TimeUnit.MINUTES);
+    }
 }
+}
+
     // 添加定时清理任务
     public static void scheduleCleanup() {
         ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
         scheduler.scheduleAtFixedRate(() -> {
             LocalDate today = LocalDate.now();
-            LocalDate threshold = today.minusDays(CACHE_EXPIRE_DAYS);
-
-            // 清理车辆最后出现记录
+            // 清理30天前的车辆记录
             vehicleLastSeen.entrySet().removeIf(entry ->
-                entry.getValue().isBefore(threshold)
+                entry.getValue().isBefore(today.minusDays(30))
             );
-
-            // 清理每日计数器
-            String dateThreshold = threshold.format(DateTimeFormatter.BASIC_ISO_DATE);
+            // 清理30天前的计数器
+            String threshold = today.minusDays(30).format(DateTimeFormatter.BASIC_ISO_DATE);
             dailyCounters.entrySet().removeIf(entry ->
-                entry.getKey().compareTo(dateThreshold) < 0
+                entry.getKey().compareTo(threshold) < 0
             );
-
-            // 清理方向缓存
-            directionCache.entrySet().removeIf(entry -> {
-                LocalDate lastSeen = vehicleLastSeen.get(entry.getKey());
-                return lastSeen == null || lastSeen.isBefore(threshold);
-            });
-        }, 0, 1, TimeUnit.HOURS);
+        }, 0, 1, TimeUnit.HOURS); // 每小时清理一次
     }
-
-    // 获取年度累计流量
-    public static int[] getYearToDateTrafficMemory() {
-        return new int[]{upTotal.get(), downTotal.get()};
-    }
-
-
 }
 // 生成RowKey方法
     private static String generateRowKey(PathPoint ppoint) {
@@ -540,22 +333,22 @@ static class RedisSink extends RichSinkFunction<Tuple2<String, String>> {
 
     @Override
     public void invoke(Tuple2<String, String> value, Context context) {
-        // 获取当前 Redis 数据库的键数量
+ // 获取当前 Redis 数据库的键数量
 //            Long dbSize = redisTemplate.execute((RedisCallback<Long>) RedisServerCommands::dbSize);
 //            // 打印键数量（实际使用时建议使用日志框架）
 //            System.out.println("former Redis Key Count: " + dbSize);
         // 使用HBaseServiceImpl中相同的redisTemplate实例
         redisTemplate.opsForValue().set(
-                "v60_" + value.f0,
-                value.f1,
-                60, TimeUnit.SECONDS
+            "v60_"+value.f0,
+            value.f1,
+            60, TimeUnit.SECONDS
         );
-        redisTemplate1.opsForValue().set(
+         redisTemplate1.opsForValue().set(
                 "v2_" + value.f0, // 使用不同前缀
                 value.f1,
-                3, TimeUnit.SECONDS // 设置10秒过期
-        );
-        // 获取当前 Redis 数据库的键数量
+                2, TimeUnit.SECONDS // 设置10秒过期
+            );
+         // 获取当前 Redis 数据库的键数量
 //            dbSize = redisTemplate.execute((RedisCallback<Long>) RedisServerCommands::dbSize);
 //            // 打印键数量（实际使用时建议使用日志框架）
 //            System.out.println("Current Redis Key Count: " + dbSize);
@@ -653,6 +446,49 @@ public static class VehicleSegAccumulator {
     private Map<Long, VehicleSeg> vehicleSegMap;
 }
 
+//查询指定时间戳当天的车流量
+public static Pair<Integer, Integer> getTodayTotal(long timeMillis) throws IOException {
+    long st = System.currentTimeMillis();
+
+    // 1. 确定目标日期
+    LocalDate targetDate = Instant.ofEpochMilli(timeMillis)
+                                .atZone(ZoneId.systemDefault())
+                                .toLocalDate();
+    String dateStr = targetDate.format(DateTimeFormatter.BASIC_ISO_DATE);
+
+    // 2. 首先尝试从Redis获取实时数据
+    String redisValue = redisTemplate.opsForValue().get("traffic_daily:" + dateStr);
+    if (redisValue != null) {
+        int count = Integer.parseInt(redisValue);
+        return new Pair<>(count, 0);
+    }
+
+    // 3. Redis中没有数据时从HBase获取
+    org.apache.hadoop.conf.Configuration conf = getHBaseConfiguration();
+    try (Connection connection = ConnectionFactory.createConnection(conf)) {
+        String tableName = "ZCarTraj_" + dateStr;
+
+        if (!tableExists(connection, tableName)) {
+            System.out.println("跳过不存在的表: " + tableName);
+            return new Pair<>(0, 0);
+        }
+
+        long[] dateRange = getDateRange(targetDate);
+        System.out.println("处理日期: " + dateStr + ", 时间范围: " + dateRange[0] + " - " + dateRange[1]);
+
+        int count = 0;
+        try (Table table = connection.getTable(TableName.valueOf(tableName));
+             ResultScanner scanner = table.getScanner(new Scan())) {
+
+            for (Result res : scanner) {
+                count++;
+            }
+        }
+
+        long st1 = System.currentTimeMillis();
+        return new Pair<>(count, (int)(st1 - st));
+    }
+}
 
 public static int[] getYearToDateTraffic(long timestamp) throws IOException {
     // 1. 确定时间范围
@@ -755,70 +591,5 @@ public static int[] getYearToDateTraffic(long timestamp) throws IOException {
 }
 public static Pair<Integer, Integer> getTodayTotalMemory(long timeMillis) throws IOException {
         return todayTotal.get();
-}
-
-public static Set<String> getAllPlateNumbers() {
-    Set<String> plateNumbers = new HashSet<>();
-
-    stateLock.lock();
-    try {
-        // 遍历所有时间分段标识
-        for (String timeSeg : mapTimeSeg.values()) {
-            // 格式：timestamp + "-" + plateNo + "-" + id
-            String[] parts = timeSeg.split("-");
-            if (parts.length >= 2) {
-                plateNumbers.add(parts[1]); // 车牌号是第二部分
-            }
-        }
-    } finally {
-        stateLock.unlock();
-    }
-    plateNumbers.add(String.valueOf(plateNumbers.size()));
-    return plateNumbers;
-}
-public static List<JSONObject> getTrajectoryByPlateNo(String plateNo) {
-    List<JSONObject> trajectories = new ArrayList<>();
-
-    // 使用锁确保线程安全
-    synchronized (stateLock) {
-        // 遍历所有车辆ID
-        for (String id : mapTimeSeg.keySet()) {
-            // 检查车牌号是否匹配
-            String storedPlateNo = mapTimeSeg.get(id).split("-")[1];
-            if (storedPlateNo.equals(plateNo)) {
-                // 构建轨迹JSON
-                JSONObject trajectoryJson = new JSONObject();
-                trajectoryJson.put("timeSeg", mapTimeSeg.get(id));
-                trajectoryJson.put("type", mapType.get(id));
-                trajectoryJson.put("latestTime", lastSeenTime.get(id));
-                trajectoryJson.put("eventList", new JSONArray());
-
-                // 获取轨迹点数据
-                List<Tuple5<Double, Double, Integer, Integer, Double>> points = map.get(id);
-                List<TrajectoryPoint> trajectoryPoints = new ArrayList<>();
-                if (points != null) {
-                    for (Tuple5<Double, Double, Integer, Integer, Double> point : points) {
-                        trajectoryPoints.add(new TrajectoryPoint(point.f0,point.f1,point.f2,point.f3,point.f4));
-                    }
-                }
-                trajectoryJson.put("trajectory", trajectoryPoints);
-
-                trajectories.add(trajectoryJson);
-            }
-        }
-    }
-
-    return trajectories;
-}
-@Getter
-@Setter
-@NoArgsConstructor
-@AllArgsConstructor
-public static class TrajectoryPoint {
-    private double longitude;
-    private double latitude;
-    private int laneNo;
-    private int direction;
-    private double speed;
 }
 }

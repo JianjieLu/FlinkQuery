@@ -8,6 +8,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.connection.RedisClusterConfiguration;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
+import org.springframework.data.redis.connection.RedisStandaloneConfiguration;
 import org.springframework.data.redis.connection.lettuce.LettuceClientConfiguration;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -21,25 +22,28 @@ import java.util.Map;
 
 @Configuration
 public class RedisConfig {
-   @Bean
+  @Value("${spring.redis.host}")
+    private String redisHost;
+
+    @Value("${spring.redis.port}")
+    private int redisPort;
+
+    @Value("${spring.redis.password}")
+    private String redisPassword;
+
+    @Bean
     public RedisConnectionFactory redisConnectionFactory() {
-        RedisClusterConfiguration clusterConfig = new RedisClusterConfiguration(
-            Arrays.asList(
-                "100.65.38.139:8001",
-                "100.65.38.140:8002",
-                "100.65.38.141:8003",
-                "100.65.38.142:8004",
-                "100.65.38.36:8005",
-                "100.65.38.37:8006"
-            )
-        );
-        clusterConfig.setPassword("123456");
+        // 单机配置
+        RedisStandaloneConfiguration config = new RedisStandaloneConfiguration();
+        config.setHostName(redisHost);
+        config.setPort(redisPort);
+        config.setPassword(redisPassword); // 设置密码
 
         LettuceClientConfiguration clientConfig = LettuceClientConfiguration.builder()
             .commandTimeout(Duration.ofSeconds(2))
             .build();
 
-        return new LettuceConnectionFactory(clusterConfig, clientConfig);
+        return new LettuceConnectionFactory(config, clientConfig);
     }
 
     @Bean("redisTemplate")

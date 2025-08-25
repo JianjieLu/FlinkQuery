@@ -21,6 +21,8 @@
 
         //交通饱和度
         private double trafficSaturation;
+        private double upTrafficSaturation;
+        private double downTrafficSaturation;
 
         //车密度-  车数/公里数
         private double vehicleDensity;
@@ -58,5 +60,9 @@
         private int   zaChemicalCount;
         private int   zaHeavyTrackCount;
         private double zaBusTrackVal;
+                // 在TimeSpatialData类中添加LOS相关字段（类定义中）
+        private String mainUpLOS;    // 主路上行服务水平
+        private String mainDownLOS;    // 主路上行服务水平
+
 
     }

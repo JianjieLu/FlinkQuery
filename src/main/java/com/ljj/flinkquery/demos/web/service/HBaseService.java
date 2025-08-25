@@ -11,13 +11,16 @@ public interface HBaseService {
     String getBySkateID(Long startTime, Long endTime, String startMileage, String endMileage) throws IOException;
     void getEmpty(String tableName, String rowKey);
     String getByLongLati(Long startTime,Long endTime, Double Longitude1,Double Latitude1,Double Longitude2,Double Latitude2) throws IOException;
-    TimeSpatialResult getByTimeSpatial(Long startTime, Long endTime, String startMileage, String endMileage, Double Longitude1, Double Latitude1, Double Longitude2, Double Latitude2) throws IOException;
     TimeSpatialResult getByTimeSpatialWithID(Long startTime, Long endTime, String startMileage, String endMileage, Double Longitude1, Double Latitude1, Double Longitude2, Double Latitude2) throws IOException;
     List<CongestionEvent> getCrowdedInfo(Long startTime, Long endTime, String startMileage, String endMileage) throws IOException;
     CongestionEvent getCongestionEventById(int eventId);
     List<CongestionEventResult> getCongestionEvent(Long startTime, Long endTime, Integer startMileage, Integer endMileage, Double Longitude1, Double Latitude1, Double Longitude2, Double Latitude2,int direction) throws IOException;
-    SectionalFlowResult getSectionalFlow(Long startTime, Long endTime, String startMileage, String endMileage, Double Longitude1, Double Latitude1, Double Longitude2, Double Latitude2, Integer level) throws IOException;
+
+
+
     jizhanResult getStFlow(String stId,Long startTime,Long endTime) throws IOException;
+    SectionalFlowResult getSectionalFlow(Long startTime, Long endTime, String startMileage, String endMileage, Double Longitude1, Double Latitude1, Double Longitude2, Double Latitude2, Integer level) throws IOException;
     SectionalBatchFlowResult getBatchSectionalFlow(List<SectionalFlowQuery> queries);
+    TimeSpatialResult getByTimeSpatial(Long startTime, Long endTime, String startMileage, String endMileage, Double Longitude1, Double Latitude1, Double Longitude2, Double Latitude2) throws IOException;
 
 }

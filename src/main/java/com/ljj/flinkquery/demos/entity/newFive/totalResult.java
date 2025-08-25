@@ -16,5 +16,5 @@ public class totalResult {
     int total;
     double annualUpAverageNum;
     double annualDownAverageNum;
-    Map<String, Map<Integer, Integer>> flowTendency;
+    Map<String, Map<Integer, Map<Integer, Integer>>> flowTendency;
 }

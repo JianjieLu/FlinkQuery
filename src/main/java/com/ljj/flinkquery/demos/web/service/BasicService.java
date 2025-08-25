@@ -1,15 +1,19 @@
 package com.ljj.flinkquery.demos.web.service;
 
+import com.alibaba.fastjson2.JSONObject;
 import com.ljj.flinkquery.demos.entity.newFive.firstResult;
 import com.ljj.flinkquery.demos.entity.newFive.secondResult;
 import com.ljj.flinkquery.demos.entity.newFive.totalResult;
+import com.ljj.flinkquery.demos.entity.upDownResult;
 import com.ljj.flinkquery.demos.web.impl.edu.tableOps.totalOps;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.bind.annotation.RequestParam;
 
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutionException;
 
 public interface BasicService {
@@ -20,13 +24,17 @@ Map<Integer, Integer> getVehicleTypesByDuration(Long startTime, Long endTime);
 boolean deleteTable(String tableName) throws IOException;
 List<totalOps.TrajData> getTrajInTimeRange(Long startTime, Long endTime) throws IOException;
     List<totalOps.VehicleData> getVehicleDataInTimeRange(Long startTime,Long endTime, List<String> qualifier) throws IOException ;
-Map<String, Map<Integer, Integer>> getHourlyTrafficStatistics(long timestamp) throws IOException, InterruptedException, ClassNotFoundException, ExecutionException;
- totalResult getHolyTotal(Long timestamp) throws IOException, ExecutionException, InterruptedException;
+Map<String, Map<Integer, Map<Integer, Integer>>> getHourlyTrafficStatistics(long timestamp) throws IOException, InterruptedException, ClassNotFoundException, ExecutionException;
+
+upDownResult getUpDownChargerByDuration(String stationId, String startTime, String endTime);
+totalResult getHolyTotal(Long timestamp) throws IOException, ExecutionException, InterruptedException;
 
 
-
+List<upDownResult> getBatchSectionalFlow(List<String> stationIds,String beginTime,String endTime);
+List<JSONObject> getTrajectoryByPlateNo(String plateNo) throws IOException;
+Set<String> getAllPlateNumbers();
 double[] test1(Long timestamp) throws IOException;
 secondResult test2(Long timestamp);
-Map<String, Map<Integer, Integer>> test3(Long timestamp) throws IOException, InterruptedException, ClassNotFoundException, ExecutionException;
+Map<String, Map<Integer, Map<Integer, Integer>>> test3(Long timestamp) throws IOException, InterruptedException, ClassNotFoundException, ExecutionException;
 
 }

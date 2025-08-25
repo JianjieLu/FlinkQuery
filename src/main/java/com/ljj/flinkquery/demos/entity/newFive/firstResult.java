@@ -12,6 +12,6 @@ import lombok.Setter;
 public class firstResult {
     int upCrowdNum;
     int downCrowdNum;
-    int upCrowdLength;
-    int downCrowdLength;
+    float upCrowdLength;
+    float downCrowdLength;
 }

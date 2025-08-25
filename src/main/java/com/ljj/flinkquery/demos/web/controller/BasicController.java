@@ -1,17 +1,23 @@
 package com.ljj.flinkquery.demos.web.controller;
 
+import com.alibaba.fastjson2.JSONObject;
+import com.ljj.flinkquery.demos.entity.SectionalBatchFlowResult;
+import com.ljj.flinkquery.demos.entity.SectionalFlowQuery;
 import com.ljj.flinkquery.demos.entity.newFive.firstResult;
 import com.ljj.flinkquery.demos.entity.newFive.secondResult;
 import com.ljj.flinkquery.demos.entity.newFive.totalResult;
+import com.ljj.flinkquery.demos.entity.upDownResult;
 import com.ljj.flinkquery.demos.web.impl.edu.tableOps.totalOps;
 import com.ljj.flinkquery.demos.web.service.BasicService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Slf4j
 @RestController
@@ -19,11 +25,12 @@ public class BasicController {
 
     @Autowired
     private BasicService basicService;
- @RequestMapping(value = "/getByDuration", method = RequestMethod.GET)
+
+    @RequestMapping(value = "/getByDuration", method = RequestMethod.GET)
     @ResponseBody
     public Map<Integer, Integer> getVehicleTypesByDuration(
-        @RequestParam("startTime") Long startTime,
-        @RequestParam("endTime") Long endTime) {
+            @RequestParam("startTime") Long startTime,
+            @RequestParam("endTime") Long endTime) {
 
         log.info("查询车辆类型分布: startTime={}, endTime={}", startTime, endTime);
 
@@ -34,31 +41,33 @@ public class BasicController {
             throw new RuntimeException("车辆类型查询异常", e);
         }
     }
-      @RequestMapping(value = "/getByStake", method = RequestMethod.GET)
-      @ResponseBody
-      //@RequestParam("tableName") String tableName,
+
+    @RequestMapping(value = "/getByStake", method = RequestMethod.GET)
+    @ResponseBody
+    //@RequestParam("tableName") String tableName,
     public String getByStake(@RequestParam("startTime") Long startTime, @RequestParam("endTime") Long endTime, @RequestParam("startMileage") String startMileage, @RequestParam("endMileage") String endMileage) {
         String res;
 
-          try {
-              res=basicService.getByStake(startTime, endTime,startMileage, endMileage);
-          } catch (Exception e) {
-              throw new RuntimeException(e);
-          }
-          return res;
-      }
+        try {
+            res = basicService.getByStake(startTime, endTime, startMileage, endMileage);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+        return res;
+    }
 
 
     @RequestMapping(value = "/getData", method = RequestMethod.GET)
-      @ResponseBody
-      //@RequestParam("tableName") String tableName,
-public List<String> getRowKeysByQualifier(@RequestParam("tableName") String tableName,  @RequestParam("cf") String cf,@RequestParam("quali") String quali) throws IOException {
-        return basicService.getRowKeysByQualifier(tableName,cf,quali);
+    @ResponseBody
+    //@RequestParam("tableName") String tableName,
+    public List<String> getRowKeysByQualifier(@RequestParam("tableName") String tableName, @RequestParam("cf") String cf, @RequestParam("quali") String quali) throws IOException {
+        return basicService.getRowKeysByQualifier(tableName, cf, quali);
     }
- @GetMapping("/getAll")
+
+    @GetMapping("/getAll")
     public List<totalOps.VehicleData> getAllVehicleData(
-        @RequestParam(value = "tableName", defaultValue = "vehicle_data") String tableName,
-        @RequestParam(value = "qualifier", required = false) List<String> qualifiers) {
+            @RequestParam(value = "tableName", defaultValue = "vehicle_data") String tableName,
+            @RequestParam(value = "qualifier", required = false) List<String> qualifiers) {
 
         try {
             log.info("查询HBase表数据: table={}, qualifiers={}", tableName, qualifiers);
@@ -70,44 +79,42 @@ public List<String> getRowKeysByQualifier(@RequestParam("tableName") String tabl
     }
 
 
-
-       @DeleteMapping("/getVehicleDataInTimeRange")
+    @DeleteMapping("/getVehicleDataInTimeRange")
     public List<totalOps.VehicleData> getVehicleDataInTimeRange(
             @RequestParam("startTime") Long startTime,
             @RequestParam("endTime") Long endTime,
             @RequestParam("qualifier") List<String> qualifier) throws IOException {
-       try {
-            return basicService.getVehicleDataInTimeRange(startTime,endTime,qualifier);
+        try {
+            return basicService.getVehicleDataInTimeRange(startTime, endTime, qualifier);
         } catch (Exception e) {
             log.error("查询HBase数据失败", e);
             throw new RuntimeException("HBase查询异常: " + e.getMessage());
         }
 
-       }
-
-
-      //只需指定时间，会自动锁定表
-       @RequestMapping(value = "/getTrajInTime", method = RequestMethod.GET)
-@ResponseBody
-public List<totalOps.TrajData> getTrajInTimeRange(
-    @RequestParam("startTime") Long startTime,
-    @RequestParam("endTime") Long endTime) {
-
-    log.info("查询时间段内的轨迹数据: startTime={}, endTime={}", startTime, endTime);
-
-    try {
-        return basicService.getTrajInTimeRange(startTime, endTime);
-    } catch (Exception e) {
-        log.error("轨迹查询失败: ", e);
-        throw new RuntimeException("轨迹数据查询异常", e);
     }
-}
 
 
+    //只需指定时间，会自动锁定表
+    @RequestMapping(value = "/getTrajInTime", method = RequestMethod.GET)
+    @ResponseBody
+    public List<totalOps.TrajData> getTrajInTimeRange(
+            @RequestParam("startTime") Long startTime,
+            @RequestParam("endTime") Long endTime) {
 
-@GetMapping("/getHourlyTrafficStatistics")
-    public Map<String, Map<Integer, Integer>> getHourlyTrafficStatistics(
-        @RequestParam("timestamp") long timestamp) {
+        log.info("查询时间段内的轨迹数据: startTime={}, endTime={}", startTime, endTime);
+
+        try {
+            return basicService.getTrajInTimeRange(startTime, endTime);
+        } catch (Exception e) {
+            log.error("轨迹查询失败: ", e);
+            throw new RuntimeException("轨迹数据查询异常", e);
+        }
+    }
+
+
+    @GetMapping("/getHourlyTrafficStatistics")
+    public Map<String, Map<Integer, Map<Integer, Integer>>> getHourlyTrafficStatistics(
+            @RequestParam("timestamp") long timestamp) {
 
         log.info("获取每小时车流量统计: timestamp={}", timestamp);
 
@@ -120,10 +127,9 @@ public List<totalOps.TrajData> getTrajInTimeRange(
     }
 
 
-
-        @GetMapping("/test1")
+    @GetMapping("/test1")
     public double[] test1(
-        @RequestParam("timestamp") long timestamp) {
+            @RequestParam("timestamp") long timestamp) {
 
         log.info("获取每小时车流量统计: timestamp={}", timestamp);
 
@@ -134,9 +140,10 @@ public List<totalOps.TrajData> getTrajInTimeRange(
             throw new RuntimeException("车流量统计异常: " + e.getMessage(), e);
         }
     }
-            @GetMapping("/test2")
+
+    @GetMapping("/test2")
     public secondResult test2(
-        @RequestParam("timestamp") long timestamp) {
+            @RequestParam("timestamp") long timestamp) {
 
         log.info("获取每小时车流量统计: timestamp={}", timestamp);
 
@@ -147,9 +154,10 @@ public List<totalOps.TrajData> getTrajInTimeRange(
             throw new RuntimeException("车流量统计异常: " + e.getMessage(), e);
         }
     }
-            @GetMapping("/test3")
-    public Map<String, Map<Integer, Integer>> test3(
-        @RequestParam("timestamp") long timestamp) {
+
+    @GetMapping("/test3")
+    public Map<String, Map<Integer, Map<Integer, Integer>>> test3(
+            @RequestParam("timestamp") long timestamp) {
 
         log.info("获取每小时车流量统计: timestamp={}", timestamp);
 
@@ -160,8 +168,6 @@ public List<totalOps.TrajData> getTrajInTimeRange(
             throw new RuntimeException("车流量统计异常: " + e.getMessage(), e);
         }
     }
-
-
 
     @GetMapping("/getHolyTotal")
     public totalResult getHolyTotal(
@@ -176,7 +182,36 @@ public List<totalOps.TrajData> getTrajInTimeRange(
             throw new RuntimeException("车流量统计异常: " + e.getMessage(), e);
         }
     }
+@PostMapping("/getUpDownChargerByDuration")
+public upDownResult getUpDownChargerByDuration(
+        @RequestBody Map<String, String> requestParams) { // 改用 RequestBody 接收 JSON 参数
 
+    String stationId = requestParams.get("stationId");
+    String beginTime = requestParams.get("beginTime");
+    String endTime = requestParams.get("endTime");
+
+    try {
+        return basicService.getUpDownChargerByDuration(stationId, beginTime, endTime);
+    } catch (Exception e) {
+        log.error("车流量统计失败: ", e);
+        throw new RuntimeException("车流量统计异常: " + e.getMessage(), e);
+    }
+}
+  @PostMapping("/getBatchUpDownCharger")
+    public List<upDownResult> getBatchSectionalFlow(
+         List<String> stationIds,String beginTime,String endTime) {
+return null;
+//        return basicService.getBatchUpDownCharger(stationIds,beginTime,endTime);
+    }
+@GetMapping("/plateNumbers")
+public Set<String> getAllPlateNumbers() {
+    return basicService.getAllPlateNumbers();
+}
+@GetMapping("/getTrj")
+
+public List<JSONObject> getTrajectoryByPlateNo(String plateNo) throws IOException {
+        return basicService.getTrajectoryByPlateNo(plateNo);
+}
 }
 
 //车流量   桩号，经纬度，起止时间，平均车速，交通饱和度

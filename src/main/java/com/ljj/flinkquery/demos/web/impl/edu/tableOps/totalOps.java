@@ -13,6 +13,7 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.*;
 import org.apache.hadoop.hbase.client.*;
 import org.apache.hadoop.hbase.filter.KeyOnlyFilter;
+import org.apache.hadoop.hbase.filter.MultiRowRangeFilter;
 import org.apache.hadoop.hbase.io.ImmutableBytesWritable;
 import org.apache.hadoop.hbase.io.compress.Compression;
 import org.apache.hadoop.hbase.mapreduce.TableMapReduceUtil;
@@ -42,13 +43,16 @@ import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.Reducer;
 import org.springframework.web.bind.annotation.RequestParam;
 
+
 public class totalOps {
-    private static Configuration getHBaseConfiguration() {
+
+    public static Configuration getHBaseConfiguration() {
         Configuration conf = HBaseConfiguration.create();
-        conf.set("hbase.zookeeper.quorum", "100.65.38.139,100.65.38.140,100.65.38.141,100.65.38.142,100.65.38.36,100.65.38.37,100.65.38.38");
+        conf.set("hbase.zookeeper.quorum", "100.65.38.139,100.65.38.140,100.65.38.141,100.65.38.142,10.48.53.80");
         conf.set("hbase.zookeeper.property.clientPort", "2181");
         return conf;
     }
+
 // 定义轨迹数据结构
 @AllArgsConstructor
 @NoArgsConstructor
@@ -325,12 +329,17 @@ private static String getStringValue(Result result, String cf, String qualifier)
     byte[] value = result.getValue(Bytes.toBytes(cf), Bytes.toBytes(qualifier));
     return (value != null) ? Bytes.toString(value) : "";
 }
-    private static boolean tableExists(Connection connection, String tableName) throws IOException {
+    public static boolean tableExists(Connection connection, String tableName) throws IOException {
         try (Admin admin = connection.getAdmin()) {
             return admin.tableExists(TableName.valueOf(tableName));
         }
     }
-
+private static float getFloatValue(Result result, String cf, String qualifier) {
+    byte[] bytes = result.getValue(Bytes.toBytes(cf), Bytes.toBytes(qualifier));
+    return (bytes != null && bytes.length == 4) ? 
+           Bytes.toFloat(bytes) : 
+           0.0f;  // 默认值
+}
     private static LocalDate millisToLocalDate(long millis) {
         return Instant.ofEpochMilli(millis)
                 .atZone(ZoneId.systemDefault())
@@ -396,7 +405,7 @@ private static String getStringValue(Result result, String cf, String qualifier)
     public static List<Pair<CongestionEvent, Long>> getCongestionEvent(String tableName, List<Long> time) {
         List<Pair<CongestionEvent, Long>> congs = new ArrayList<>();
         Configuration conf = HBaseConfiguration.create();
-        conf.set("hbase.zookeeper.quorum", "100.65.38.139,100.65.38.140,100.65.38.141,100.65.38.142,100.65.38.36,100.65.38.37,100.65.38.38");
+        conf.set("hbase.zookeeper.quorum", "100.65.38.139,100.65.38.140,100.65.38.141,100.65.38.142,10.48.53.80");
         conf.set("hbase.zookeeper.property.clientPort", "2181");
         List<String> ss = new ArrayList<>();
         try (Connection connection = ConnectionFactory.createConnection(conf)) {
@@ -451,7 +460,7 @@ private static String getStringValue(Result result, String cf, String qualifier)
     public static boolean deleteTable(String tableName) throws IOException {
 
         Configuration config = HBaseConfiguration.create();
-        config.set("hbase.zookeeper.quorum", "100.65.38.139,100.65.38.140,100.65.38.141,100.65.38.142,100.65.38.36,100.65.38.37,100.65.38.38");
+        config.set("hbase.zookeeper.quorum", "100.65.38.139,100.65.38.140,100.65.38.141,100.65.38.142,10.48.53.80");
         config.set("hbase.zookeeper.property.clientPort", "2181");
 
         try (Connection connection = ConnectionFactory.createConnection(config);
@@ -473,6 +482,76 @@ private static String getStringValue(Result result, String cf, String qualifier)
             return true;
         }
     }
+
+        public static Pair<Integer,Integer> getTodayTotalDataBase(long timeMillis) throws IOException {
+        long st=System.currentTimeMillis();
+        // 1. 确定日期范围
+        LocalDate targetDate = Instant.ofEpochMilli(timeMillis)
+                                      .atZone(ZoneId.systemDefault())
+                                      .toLocalDate();
+
+        // 2. 准备结果集：Map<日期, Map<小时, 车流量>>
+        Map<String, Map<Integer, Integer>> result = new LinkedHashMap<>();
+        result.put(targetDate.format(DateTimeFormatter.BASIC_ISO_DATE), new HashMap<>());
+
+        // 3. 初始化每小时计数桶
+        for (Map<Integer, Integer> hourlyCount : result.values()) {
+            for (int hour = 0; hour < 24; hour++) {
+                hourlyCount.put(hour, 0);
+            }
+        }
+                String dateStr = targetDate.format(DateTimeFormatter.BASIC_ISO_DATE);
+
+        Configuration conf = getHBaseConfiguration();
+        try (Connection connection = ConnectionFactory.createConnection(conf)) {
+            // 4. 处理两天数据
+
+                String tableName = "ZCarTraj_" + dateStr;
+
+                if (!tableExists(connection, tableName)) {
+                    System.out.println("跳过不存在的表: " + tableName);
+                    return new Pair<>(0,0);
+                }
+
+                // 5. 获取日期边界
+                long[] dateRange = getDateRange(targetDate);
+                System.out.println("处理日期: " + dateStr + ", 时间范围: " + dateRange[0] + " - " + dateRange[1]);
+
+                try (Table table = connection.getTable(TableName.valueOf(tableName));
+                     ResultScanner scanner = table.getScanner(new Scan())) {
+
+                    // 6. 扫描表中所有车辆
+                    for (Result res : scanner) {
+                        String rowKey = Bytes.toString(res.getRow());
+                        String[] parts = rowKey.split("-");
+                        if (parts.length < 2) continue;
+
+                        // 7. 提取时间戳
+                        long timestamp = Long.parseLong(parts[0]);
+
+                        // 8. 计算小时
+                        ZonedDateTime zdt = Instant.ofEpochMilli(timestamp)
+                                                   .atZone(ZoneId.systemDefault());
+                        int hour = zdt.getHour();
+
+                        // 9. 更新计数
+                        Map<Integer, Integer> hourlyCount = result.get(dateStr);
+                        hourlyCount.put(hour, hourlyCount.get(hour) + 1);
+
+                }
+            }
+        }
+        int count = 0;
+        for(int i=0;i<24;i++) {
+        count+=result.get(dateStr).get(i);
+
+        }
+        long st1=System.currentTimeMillis();
+
+        return new Pair<>(count,(int)(st1-st));
+    }
+
+
 //    public static Map<String, Map<Integer, Integer>> getHourlyTrafficForDayAndPreviousDay(long timeMillis) throws IOException {
 //        // 1. 确定日期范围
 //        LocalDate targetDate = Instant.ofEpochMilli(timeMillis)
@@ -541,130 +620,249 @@ private static String getStringValue(Result result, String cf, String qualifier)
       private static final int SCANNER_CACHING = 10000; // 一次获取10000行
     private static final int THREAD_POOL_SIZE = 2; // 处理两天的数据
 
-    public static Map<String, Map<Integer, Integer>> getHourlyTrafficForDayAndPreviousDay(long timeMillis)
-            throws IOException, InterruptedException, ExecutionException {
-long st=System.currentTimeMillis();
-        // 1. 确定日期范围
-        LocalDate targetDate = Instant.ofEpochMilli(timeMillis)
-                .atZone(ZoneId.systemDefault())
-                .toLocalDate();
-        LocalDate previousDay = targetDate.minusDays(1);
+//public static Map<String, Map<Integer, Map<Integer, Integer>>> getHourlyTrafficForDayAndPreviousDay(long timeMillis)
+//        throws IOException, InterruptedException, ExecutionException {
+//    long st = System.currentTimeMillis();
+//
+//    // 1. 确定日期范围
+//    LocalDate targetDate = Instant.ofEpochMilli(timeMillis)
+//            .atZone(ZoneId.systemDefault())
+//            .toLocalDate();
+//    LocalDate previousDay = targetDate.minusDays(1);
+//    String targetDateStr = targetDate.format(DateTimeFormatter.BASIC_ISO_DATE);
+//    String previousDayStr = previousDay.format(DateTimeFormatter.BASIC_ISO_DATE);
+//
+//    // 2. 准备新的三层结构结果集
+//    // 外层: 日期 -> 中层: 小时 -> 内层: 方向 -> 数量
+//    Map<String, Map<Integer, Map<Integer, Integer>>> result = new LinkedHashMap<>();
+//
+//    // 初始化日期桶
+//    Map<Integer, Map<Integer, Integer>> targetDayMap = new HashMap<>();
+//    Map<Integer, Map<Integer, Integer>> previousDayMap = new HashMap<>();
+//    result.put(targetDateStr, targetDayMap);
+//    result.put(previousDayStr, previousDayMap);
+//
+//    // 初始化小时和方向桶 (0-23小时, 1-2方向)
+//    for (Map<Integer, Map<Integer, Integer>> dayMap : result.values()) {
+//        for (int hour = 0; hour < 24; hour++) {
+//            Map<Integer, Integer> directionMap = new HashMap<>();
+//            directionMap.put(1, 0); // 方向1初始化为0
+//            directionMap.put(2, 0); // 方向2初始化为0
+//            dayMap.put(hour, directionMap);
+//        }
+//    }
+//
+//    // 3. 创建线程池处理两天数据
+//    ExecutorService executor = Executors.newFixedThreadPool(THREAD_POOL_SIZE);
+//    List<Future<Void>> futures = new ArrayList<>();
+//
+//    Configuration conf = getHBaseConfiguration();
+//    try (Connection connection = ConnectionFactory.createConnection(conf)) {
+//        // 提交两天的处理任务
+//        for (LocalDate date : Arrays.asList(previousDay, targetDate)) {
+//            futures.add(executor.submit(new TrafficCounter(connection, date, result)));
+//        }
+//
+//        // 等待所有任务完成
+//        for (Future<Void> future : futures) {
+//            future.get();
+//        }
+//    } catch (Exception e) {
+//        throw new IOException("并行处理失败", e);
+//    } finally {
+//        executor.shutdown();
+//    }
+//
+//    long st1 = System.currentTimeMillis();
+//    long elapsed = st1 - st;  // 计算耗时
+//
+//    // 添加执行时间到结果集
+//    Map<Integer, Map<Integer, Integer>> timeMapContainer = new HashMap<>();
+//    Map<Integer, Integer> timeMap = new HashMap<>();
+//    timeMap.put(-1, (int) elapsed);
+//    timeMapContainer.put(-1, timeMap); // 特殊小时-1存储时间
+//    result.put("__execution_time__", timeMapContainer);
+//
+//    return result;
+//}
 
-        // 2. 准备结果集
-        Map<String, Map<Integer, Integer>> result = new LinkedHashMap<>();
-        result.put(targetDate.format(DateTimeFormatter.BASIC_ISO_DATE), new HashMap<>());
-        result.put(previousDay.format(DateTimeFormatter.BASIC_ISO_DATE), new HashMap<>());
+    public static Map<String, Map<Integer, Map<Integer, Integer>>> getHourlyTrafficForDayAndPreviousDay(long timeMillis)
+        throws IOException {
+    long st = System.currentTimeMillis();
 
-        // 初始化小时桶 (0-23)
-        for (Map<Integer, Integer> map : result.values()) {
-            for (int hour = 0; hour < 24; hour++) {
-                map.put(hour, 0);
-            }
-        }
+    // 1. 确定日期范围
+    LocalDate targetDate = Instant.ofEpochMilli(timeMillis)
+            .atZone(ZoneId.systemDefault())
+            .toLocalDate();
+    LocalDate previousDay = targetDate.minusDays(1);
+    String targetDatePrefix = targetDate.format(DateTimeFormatter.BASIC_ISO_DATE); // yyyyMMdd
+    String previousDayPrefix = previousDay.format(DateTimeFormatter.BASIC_ISO_DATE); // yyyyMMdd
 
-        // 3. 创建线程池处理两天数据
-        ExecutorService executor = Executors.newFixedThreadPool(THREAD_POOL_SIZE);
-        List<Future<Void>> futures = new ArrayList<>();
+    // 2. 初始化结果结构 (日期 -> 小时 -> 方向 -> 数量)
+    Map<String, Map<Integer, Map<Integer, Integer>>> result = new LinkedHashMap<>();
+    Map<Integer, Map<Integer, Integer>> targetDayMap = new HashMap<>();
+    Map<Integer, Map<Integer, Integer>> previousDayMap = new HashMap<>();
+    result.put(targetDatePrefix, targetDayMap);
+    result.put(previousDayPrefix, previousDayMap);
 
-        Configuration conf = getHBaseConfiguration();
-        try (Connection connection = ConnectionFactory.createConnection(conf)) {
-            // 提交两天的处理任务
-            for (LocalDate date : Arrays.asList(previousDay, targetDate)) {
-                futures.add(executor.submit(new TrafficCounter(connection, date, result)));
-            }
-
-            // 等待所有任务完成
-            for (Future<Void> future : futures) {
-                future.get();
-            }
-        } catch (Exception e) {
-            throw new IOException("并行处理失败", e);
-        } finally {
-            executor.shutdown();
-        }
-long st1=System.currentTimeMillis();
-long elapsed = st1 - st;  // 计算耗时
-    Map<Integer, Integer> timeMap = new HashMap<>();
-    timeMap.put(-1, (int) elapsed);  // 特殊键-1存储时间
-    result.put("__execution_time__", timeMap);  // 用特殊键放入结果
-        return result;
+    // 初始化所有小时桶 (0-23小时)
+    for (int hour = 0; hour < 24; hour++) {
+        targetDayMap.put(hour, new HashMap<Integer, Integer>() {{
+            put(1, 0); // 上行初始值
+            put(2, 0); // 下行初始值
+        }});
+        previousDayMap.put(hour, new HashMap<Integer, Integer>() {{
+            put(1, 0);
+            put(2, 0);
+        }});
     }
 
-    // 处理单日数据的任务
-    private static class TrafficCounter implements Callable<Void> {
-        private final Connection connection;
-        private final LocalDate date;
-        private final Map<String, Map<Integer, Integer>> result;
+    // 3. 查询HBase
+    Configuration conf = getHBaseConfiguration();
+    try (Connection connection = ConnectionFactory.createConnection(conf);
+         Table table = connection.getTable(TableName.valueOf("traffic_stats"))) {
 
-        public TrafficCounter(Connection connection, LocalDate date,
-                              Map<String, Map<Integer, Integer>> result) {
-            this.connection = connection;
-            this.date = date;
-            this.result = result;
-        }
+        // 修复1：使用正确的列族名称 "stats"
+        Scan scan = new Scan();
+        scan.setStartRow(Bytes.toBytes(previousDayPrefix + "00")); // 起始：yyyyMMdd00
+        scan.setStopRow(Bytes.toBytes(targetDatePrefix + "24"));   // 结束：yyyyMMdd24 (不包含)
+        scan.addColumn(Bytes.toBytes("stats"), Bytes.toBytes("upcount"));   // 修复列族
+        scan.addColumn(Bytes.toBytes("stats"), Bytes.toBytes("downcount")); // 修复列族
 
-        @Override
-        public Void call() throws Exception {
-            String dateStr = date.format(DateTimeFormatter.BASIC_ISO_DATE);
-            String tableName = "ZCarTraj_" + dateStr;
+        try (ResultScanner scanner = table.getScanner(scan)) {
+            for (Result result1 : scanner) {
+                // 解析RowKey: yyyyMMddHH
+                String rowKey = Bytes.toString(result1.getRow());
+                // 修复2：正确提取8位日期
+                String dateStr = rowKey.substring(0, 8);  // 日期部分
+                int hour = Integer.parseInt(rowKey.substring(8, 10)); // 小时
 
-            // 初始化小时计数数组
-            int[] hourlyCounts = new int[24];
+                // 获取流量值
+                int upCount = parseCount(result1, "upcount");
+                int downCount = parseCount(result1, "downcount");
 
-            // 跳过不存在的表
-            if (!tableExists(connection, tableName)) {
-                System.out.println("跳过不存在的表: " + tableName);
-                return null;
-            }
-
-            // 获取日期边界
-            long[] dateRange = getDateRange(date);
-            long startTime = dateRange[0];
-            long endTime = dateRange[1];
-
-            try (Table table = connection.getTable(TableName.valueOf(tableName))) {
-                // 创建优化的Scan对象
-                Scan scan = new Scan();
-                scan.setCaching(SCANNER_CACHING);
-                scan.setCacheBlocks(false);
-
-                // 设置行键范围 (使用时间戳范围)
-                scan.setStartRow(Bytes.toBytes(startTime + "-"));
-                scan.setStopRow(Bytes.toBytes(endTime + "-"));
-
-                // 只获取行键，不获取列值
-                scan.setFilter(new KeyOnlyFilter());
-
-                // 使用高效的ResultScanner
-                try (ResultScanner scanner = table.getScanner(scan)) {
-                    for (Result res : scanner) {
-                        String rowKey = Bytes.toString(res.getRow());
-                        String[] parts = rowKey.split("-", 2); // 只分割一次
-                        if (parts.length < 1) continue;
-
-                        try {
-                            long timestamp = Long.parseLong(parts[0]);
-                            ZonedDateTime zdt = Instant.ofEpochMilli(timestamp)
-                                    .atZone(ZoneId.systemDefault());
-                            int hour = zdt.getHour();
-
-                            // 更新本地计数数组
-                            hourlyCounts[hour]++;
-                        } catch (NumberFormatException e) {
-                            // 忽略格式错误的rowKey
-                        }
+                // 填充结果集
+                Map<Integer, Map<Integer, Integer>> dayMap = result.get(dateStr);
+                if (dayMap != null) {
+                    Map<Integer, Integer> hourMap = dayMap.get(hour);
+                    if (hourMap != null) {
+                        hourMap.put(1, upCount);
+                        hourMap.put(2, downCount);
                     }
                 }
-
-                // 批量更新结果
-                Map<Integer, Integer> resultMap = result.get(dateStr);
-                for (int hour = 0; hour < 24; hour++) {
-                    resultMap.put(hour, hourlyCounts[hour]);
-                }
             }
-            return null;
         }
     }
+
+    // 4. 添加执行时间
+    long elapsed = System.currentTimeMillis() - st;
+    Map<Integer, Map<Integer, Integer>> timeMap = new HashMap<>();
+    timeMap.put(-1, Collections.singletonMap(-1, (int) elapsed));
+    result.put("__execution_time__", timeMap);
+
+    return result;
+}
+
+// 修复3：使用正确的列族解析数据
+private static int parseCount(Result result, String qualifier) {
+    Cell cell = result.getColumnLatestCell(
+        Bytes.toBytes("stats"), // 修复列族名称
+        Bytes.toBytes(qualifier)
+    );
+    return (cell != null) ?
+        Integer.parseInt(Bytes.toString(cell.getValueArray(), cell.getValueOffset(), cell.getValueLength())) :
+        0;
+}
+
+// 修改后的计数任务类
+private static class TrafficCounter implements Callable<Void> {
+    private final Connection connection;
+    private final LocalDate date;
+    private final Map<String, Map<Integer, Map<Integer, Integer>>> result;
+
+    public TrafficCounter(Connection connection, LocalDate date,
+                          Map<String, Map<Integer, Map<Integer, Integer>>> result) {
+        this.connection = connection;
+        this.date = date;
+        this.result = result;
+    }
+
+    @Override
+    public Void call() throws Exception {
+        String dateStr = date.format(DateTimeFormatter.BASIC_ISO_DATE);
+        String tableName = "ZCarTraj_" + dateStr;
+
+        // 初始化小时和方向计数数组 [小时][方向]
+        int[][] hourlyDirectionCounts = new int[24][3]; // 索引0不使用，1-2用于方向
+
+        // 跳过不存在的表
+        if (!tableExists(connection, tableName)) {
+            System.out.println("跳过不存在的表: " + tableName);
+            return null;
+        }
+
+        // 获取日期边界
+        long[] dateRange = getDateRange(date);
+        long startTime = dateRange[0];
+        long endTime = dateRange[1];
+
+        try (Table table = connection.getTable(TableName.valueOf(tableName))) {
+            // 创建Scan对象
+            Scan scan = new Scan();
+            scan.setCaching(SCANNER_CACHING);
+            scan.setCacheBlocks(false);
+
+            // 设置行键范围
+            scan.setStartRow(Bytes.toBytes(startTime + "-"));
+            scan.setStopRow(Bytes.toBytes(endTime + "-"));
+
+            // 添加需要读取的列
+            scan.addColumn(Bytes.toBytes("cf0"), Bytes.toBytes("direction"));
+
+            try (ResultScanner scanner = table.getScanner(scan)) {
+                for (Result res : scanner) {
+                    // 解析行键中的时间戳
+                    String rowKey = Bytes.toString(res.getRow());
+                    String[] parts = rowKey.split("-", 2);
+                    if (parts.length < 1) continue;
+
+                    try {
+                        long timestamp = Long.parseLong(parts[0]);
+                        ZonedDateTime zdt = Instant.ofEpochMilli(timestamp)
+                                .atZone(ZoneId.systemDefault());
+                        int hour = zdt.getHour();
+
+                        // 获取方向值
+                        byte[] directionBytes = res.getValue(
+                            Bytes.toBytes("cf0"),
+                            Bytes.toBytes("direction")
+                        );
+
+                        if (directionBytes != null) {
+                            int direction = Integer.parseInt(Bytes.toString(directionBytes));
+
+                            // 只统计方向1和2
+                            if (direction == 1 || direction == 2) {
+                                hourlyDirectionCounts[hour][direction]++;
+                            }
+                        }
+                    } catch (NumberFormatException e) {
+                        // 忽略格式错误
+                    }
+                }
+            }
+
+            // 批量更新结果
+            Map<Integer, Map<Integer, Integer>> resultMap = result.get(dateStr);
+            for (int hour = 0; hour < 24; hour++) {
+                Map<Integer, Integer> directionMap = resultMap.get(hour);
+                directionMap.put(1, hourlyDirectionCounts[hour][1]);
+                directionMap.put(2, hourlyDirectionCounts[hour][2]);
+            }
+        }
+        return null;
+    }
+}
 
 
 
@@ -678,76 +876,9 @@ long elapsed = st1 - st;  // 计算耗时
 //    firstResult
 
 
-//查询指定时间戳当天的车流量
-    public static Pair<Integer,Integer> getTodayTotal(long timeMillis) throws IOException {
-        long st=System.currentTimeMillis();
-        // 1. 确定日期范围
-        LocalDate targetDate = Instant.ofEpochMilli(timeMillis)
-                                      .atZone(ZoneId.systemDefault())
-                                      .toLocalDate();
 
-        // 2. 准备结果集：Map<日期, Map<小时, 车流量>>
-        Map<String, Map<Integer, Integer>> result = new LinkedHashMap<>();
-        result.put(targetDate.format(DateTimeFormatter.BASIC_ISO_DATE), new HashMap<>());
 
-        // 3. 初始化每小时计数桶
-        for (Map<Integer, Integer> hourlyCount : result.values()) {
-            for (int hour = 0; hour < 24; hour++) {
-                hourlyCount.put(hour, 0);
-            }
-        }
-                String dateStr = targetDate.format(DateTimeFormatter.BASIC_ISO_DATE);
-
-        Configuration conf = getHBaseConfiguration();
-        try (Connection connection = ConnectionFactory.createConnection(conf)) {
-            // 4. 处理两天数据
-
-                String tableName = "ZCarTraj_" + dateStr;
-
-                if (!tableExists(connection, tableName)) {
-                    System.out.println("跳过不存在的表: " + tableName);
-                    return new Pair<>(0,0);
-                }
-
-                // 5. 获取日期边界
-                long[] dateRange = getDateRange(targetDate);
-                System.out.println("处理日期: " + dateStr + ", 时间范围: " + dateRange[0] + " - " + dateRange[1]);
-
-                try (Table table = connection.getTable(TableName.valueOf(tableName));
-                     ResultScanner scanner = table.getScanner(new Scan())) {
-
-                    // 6. 扫描表中所有车辆
-                    for (Result res : scanner) {
-                        String rowKey = Bytes.toString(res.getRow());
-                        String[] parts = rowKey.split("-");
-                        if (parts.length < 2) continue;
-
-                        // 7. 提取时间戳
-                        long timestamp = Long.parseLong(parts[0]);
-
-                        // 8. 计算小时
-                        ZonedDateTime zdt = Instant.ofEpochMilli(timestamp)
-                                                   .atZone(ZoneId.systemDefault());
-                        int hour = zdt.getHour();
-
-                        // 9. 更新计数
-                        Map<Integer, Integer> hourlyCount = result.get(dateStr);
-                        hourlyCount.put(hour, hourlyCount.get(hour) + 1);
-
-                }
-            }
-        }
-        int count = 0;
-        for(int i=0;i<24;i++) {
-        count+=result.get(dateStr).get(i);
-
-        }
-        long st1=System.currentTimeMillis();
-
-        return new Pair<>(count,(int)(st1-st));
-    }
-
-    private static long[] getDateRange(LocalDate date) {
+    public static long[] getDateRange(LocalDate date) {
         ZonedDateTime start = date.atStartOfDay(ZoneId.systemDefault());
         ZonedDateTime end = start.plusDays(1);
 
@@ -787,7 +918,7 @@ long elapsed = st1 - st;  // 计算耗时
     }
     public static List<String> getRowKeysByQualifier(String tableName, String cf, String quali) throws IOException {
         Configuration conf = HBaseConfiguration.create();
-        conf.set("hbase.zookeeper.quorum", "100.65.38.139,100.65.38.140,100.65.38.141,100.65.38.142,100.65.38.36,100.65.38.37,100.65.38.38");
+        conf.set("hbase.zookeeper.quorum", "100.65.38.139,100.65.38.140,100.65.38.141,100.65.38.142,10.48.53.80");
         conf.set("hbase.zookeeper.property.clientPort", "2181");
 
         List<String> rowKeys = new ArrayList<>();
@@ -816,177 +947,166 @@ long elapsed = st1 - st;  // 计算耗时
 
         return rowKeys;
     }
-    public static List<Integer> getVehicleCountByDirection(String tableName, List<String> rowkeys) throws IOException {
-        Configuration conf = HBaseConfiguration.create();
-        conf.set("hbase.zookeeper.quorum", "100.65.38.139,100.65.38.140,100.65.38.141,100.65.38.142,100.65.38.36,100.65.38.37,100.65.38.38");
-        conf.set("hbase.zookeeper.property.clientPort", "2181");
+   public static List<Integer> getVehicleCountByDirection(String tableName, List<String> rowkeys) throws IOException {
+    Configuration conf = HBaseConfiguration.create();
+    conf.set("hbase.zookeeper.quorum", "100.65.38.139,100.65.38.140,100.65.38.141,100.65.38.142,10.48.53.80");
+    conf.set("hbase.zookeeper.property.clientPort", "2181");
 
-        System.out.println("select table name " + tableName + " keys = " + rowkeys);
-        int upTotal = 0;
-        int downTotal = 0;
+    System.out.println("select table name " + tableName + " keys = " + rowkeys);
+    int upTotal = 0;
+    int busUp = 0;
+    int trackUp = 0;
 
-        try (Connection connection = ConnectionFactory.createConnection(conf)) {
-            // 1. 检查表是否存在
-            if (!isTableExists(connection, tableName)) {
-                return Arrays.asList(0, 0); // 表不存在返回空统计
+    try (Connection connection = ConnectionFactory.createConnection(conf)) {
+        // 1. 检查表是否存在
+        if (!isTableExists(connection, tableName)) {
+            return Arrays.asList(0, 0, 0, 0, 0, 0);
+        }
+
+        try (Table table = connection.getTable(TableName.valueOf(tableName))) {
+            // 2. 构建扫描器，一次性获取所有相关行
+            Scan scan = new Scan();
+            scan.addColumn(Bytes.toBytes("cf"), Bytes.toBytes("VehicleSegments"));
+
+            // 3. 设置扫描范围（所有rowkey及它们的后缀）
+            List<MultiRowRangeFilter.RowRange> ranges = new ArrayList<>();
+            for (String rowkey : rowkeys) {
+                // 主rowkey范围
+                ranges.add(new MultiRowRangeFilter.RowRange(
+                    Bytes.toBytes(rowkey), true,
+                    Bytes.toBytes(rowkey), true
+                ));
             }
 
-            try (Table table = connection.getTable(TableName.valueOf(tableName))) {
-                // 2. 批量查询
-                List<Get> gets = rowkeys.stream()
-                        .map(rowkey -> {
-                            Get get = new Get(Bytes.toBytes(rowkey));
-                            get.addColumn(Bytes.toBytes("cf"), Bytes.toBytes("VehicleSegments"));
-                            return get;
-                        })
-                        .collect(Collectors.toList());
+            // 4. 使用MultiRowRangeFilter进行高效扫描
+            MultiRowRangeFilter filter = new MultiRowRangeFilter(ranges);
+            scan.setFilter(filter);
 
-                // 3. 获取结果并处理
-                for (Result result : table.get(gets)) {
+            // 5. 执行扫描并处理结果
+            try (ResultScanner scanner = table.getScanner(scan)) {
+                for (Result result : scanner) {
                     if (result.isEmpty()) continue;
 
                     // 解析车辆数据
                     byte[] valueBytes = result.getValue(
-                            Bytes.toBytes("cf"),
-                            Bytes.toBytes("VehicleSegments")
+                        Bytes.toBytes("cf"),
+                        Bytes.toBytes("VehicleSegments")
                     );
 
-                    JSONArray vehicles = JSON.parseArray(
-                            Bytes.toString(valueBytes)
-                                    .replace("\\x", "\\u00")
-                                    .replace("\\", "\\\\")
-                    );
+                    String jsonStr = Bytes.toString(valueBytes)
+                        .replace("\\x", "\\u00")
+                        .replace("\\", "\\\\");
+                    JSONArray vehicles = JSON.parseArray(jsonStr);
 
-                    // 4. 按方向分类统计
+                    // 6. 按方向分类统计
                     for (Object obj : vehicles) {
                         JSONObject vehicle = (JSONObject) obj;
-                        int direction = vehicle.getIntValue("direction");
-
-                        if (direction == 1) {
+                        int vt = vehicle.getIntValue("originalType");
                             upTotal++;
-                        } else if (direction == 2) {
-                            downTotal++;
-                        }
+                            if (vt == 1 || vt == 3 || vt == 7 || vt == 15) busUp++;
+                            else trackUp++;
                     }
                 }
             }
-        } catch (IOException e) {
-            // 可根据需要记录日志
-            return Arrays.asList(0, 0); // 异常返回空统计
         }
-
-        return Arrays.asList(upTotal, downTotal);
+    } catch (IOException e) {
+        e.printStackTrace();
+        return Arrays.asList(0, 0, 0, 0, 0, 0);
     }
+       List<Integer> list = Arrays.asList(upTotal, busUp, trackUp);
+       System.out.println("tableName:"+tableName+"  rowkeys:"+rowkeys+"  result:(upTotal, downTotal, busUp, trackUp, busDown, trackDown): "+list);
+    return list;
+}
 
-    public static firstResult getNearestMinuteCongestionStats(long timestamp) throws IOException {
-    // 1. 计算最近的整分钟时间戳
+
+public static firstResult getNearestMinuteCongestionStats(long timestamp) throws IOException {
+    // 计算最近的整分钟时间戳
     long minuteTimestamp = (timestamp / 60000) * 60000;
 
-    // 2. 确定表名（按月对齐）
-    String tableName = "CongestionEvents_" +
+    // 确定表名（按月对齐）
+    String tableName = "CongestionStatistics_" +
         Instant.ofEpochMilli(timestamp)
                .atZone(ZoneId.systemDefault())
                .format(DateTimeFormatter.ofPattern("yyyyMM"));
 
     Configuration conf = getHBaseConfiguration();
-    int[] result = new int[4]; // [num1, length1, num2, length2]
+    // 使用正确的类型存储结果
+    int num1 = 0, num2 = 0;
+    float length1 = 0.0f, length2 = 0.0f;
+    boolean found = false;
 
     try (Connection connection = ConnectionFactory.createConnection(conf)) {
-        // 3. 检查表是否存在
+        // 检查表是否存在
         if (!isTableExists(connection, tableName)) {
             System.out.println("表不存在: " + tableName);
-            return new firstResult(0,0,0,0); // 返回全0数组
+            return new firstResult(0, 0, 0.0f, 0.0f);
         }
 
         try (Table table = connection.getTable(TableName.valueOf(tableName))) {
-            // 4. 尝试获取精确匹配的行
+            // 尝试获取精确匹配的行
             Get get = new Get(Bytes.toBytes(String.valueOf(minuteTimestamp)));
-            get.addColumn(Bytes.toBytes("cf"), Bytes.toBytes("congestionNum1"));
-            get.addColumn(Bytes.toBytes("cf"), Bytes.toBytes("congestionLength1"));
-            get.addColumn(Bytes.toBytes("cf"), Bytes.toBytes("congestionNum2"));
-            get.addColumn(Bytes.toBytes("cf"), Bytes.toBytes("congestionLength2"));
+            get.addColumn(Bytes.toBytes("cf"), Bytes.toBytes("CongestionNum_1"));
+            get.addColumn(Bytes.toBytes("cf"), Bytes.toBytes("CongestionLength_1"));
+            get.addColumn(Bytes.toBytes("cf"), Bytes.toBytes("CongestionNum_2"));
+            get.addColumn(Bytes.toBytes("cf"), Bytes.toBytes("CongestionLength_2"));
 
             Result resultData = table.get(get);
 
-            // 5. 如果找到精确匹配，直接返回
+            // 如果找到精确匹配
             if (!resultData.isEmpty()) {
-                result[0] = getIntValue(resultData, "cf", "congestionNum1");
-                result[1] = getIntValue(resultData, "cf", "congestionLength1");
-                result[2] = getIntValue(resultData, "cf", "congestionNum2");
-                result[3] = getIntValue(resultData, "cf", "congestionLength2");
-            return new firstResult(0,0,0,0); // 返回全0数组
+                num1 = getIntValue(resultData, "cf", "CongestionNum_1");
+                length1 = getFloatValue(resultData, "cf", "CongestionLength_1");
+                num2 = getIntValue(resultData, "cf", "CongestionNum_2");
+                length2 = getFloatValue(resultData, "cf", "CongestionLength_2");
+                return new firstResult(num1, num2, length1, length2);
             }
 
-            // 6. 如果没有精确匹配，查找前后最近的行
-            long beforeTime = minuteTimestamp - 60000;
-            long afterTime = minuteTimestamp + 60000;
+            // 如果没有精确匹配，查找前后最近的行
+            long[] timeOffsets = { -60000, 60000, -120000, 120000 }; // 检查的时间偏移
+            long closestTime = Long.MAX_VALUE;
+            Result closestResult = null;
 
-            // 尝试获取前一行
-            Result beforeResult = table.get(new Get(Bytes.toBytes(String.valueOf(beforeTime)))
-                .addColumn(Bytes.toBytes("cf"), Bytes.toBytes("congestionNum1"))
-                .addColumn(Bytes.toBytes("cf"), Bytes.toBytes("congestionLength1"))
-                .addColumn(Bytes.toBytes("cf"), Bytes.toBytes("congestionNum2"))
-                .addColumn(Bytes.toBytes("cf"), Bytes.toBytes("congestionLength2")));
+            // 搜索最近的有效行
+            for (long offset : timeOffsets) {
+                long currentTime = minuteTimestamp + offset;
+                Get offsetGet = new Get(Bytes.toBytes(String.valueOf(currentTime)));
+                offsetGet.addColumn(Bytes.toBytes("cf"), Bytes.toBytes("CongestionNum_1"));
+                offsetGet.addColumn(Bytes.toBytes("cf"), Bytes.toBytes("CongestionLength_1"));
+                offsetGet.addColumn(Bytes.toBytes("cf"), Bytes.toBytes("CongestionNum_2"));
+                offsetGet.addColumn(Bytes.toBytes("cf"), Bytes.toBytes("CongestionLength_2"));
 
-            // 尝试获取后一行
-            Result afterResult = table.get(new Get(Bytes.toBytes(String.valueOf(afterTime)))
-                .addColumn(Bytes.toBytes("cf"), Bytes.toBytes("congestionNum1"))
-                .addColumn(Bytes.toBytes("cf"), Bytes.toBytes("congestionLength1"))
-                .addColumn(Bytes.toBytes("cf"), Bytes.toBytes("congestionNum2"))
-                .addColumn(Bytes.toBytes("cf"), Bytes.toBytes("congestionLength2")));
+                Result res = table.get(offsetGet);
+                if (!res.isEmpty()) {
+                    // 检查是否更接近目标时间
+                    if (Math.abs(currentTime - minuteTimestamp) < Math.abs(closestTime - minuteTimestamp)) {
+                        closestTime = currentTime;
+                        closestResult = res;
+                    }
+                }
+            }
 
-            // 7. 选择最近的有效行
-            if (!beforeResult.isEmpty()) {
-                result[0] = getIntValue(beforeResult, "cf", "congestionNum1");
-                result[1] = getIntValue(beforeResult, "cf", "congestionLength1");
-                result[2] = getIntValue(beforeResult, "cf", "congestionNum2");
-                result[3] = getIntValue(beforeResult, "cf", "congestionLength2");
-            } else if (!afterResult.isEmpty()) {
-                result[0] = getIntValue(afterResult, "cf", "congestionNum1");
-                result[1] = getIntValue(afterResult, "cf", "congestionLength1");
-                result[2] = getIntValue(afterResult, "cf", "congestionNum2");
-                result[3] = getIntValue(afterResult, "cf", "congestionLength2");
-            }else{
-                 beforeTime = minuteTimestamp - 120000;
-                 beforeResult = table.get(new Get(Bytes.toBytes(String.valueOf(beforeTime)))
-                .addColumn(Bytes.toBytes("cf"), Bytes.toBytes("congestionNum1"))
-                .addColumn(Bytes.toBytes("cf"), Bytes.toBytes("congestionLength1"))
-                .addColumn(Bytes.toBytes("cf"), Bytes.toBytes("congestionNum2"))
-                .addColumn(Bytes.toBytes("cf"), Bytes.toBytes("congestionLength2")));
-                 if (!beforeResult.isEmpty()) {
-                     result[0] = getIntValue(beforeResult, "cf", "congestionNum1");
-                result[1] = getIntValue(beforeResult, "cf", "congestionLength1");
-                result[2] = getIntValue(beforeResult, "cf", "congestionNum2");
-                result[3] = getIntValue(beforeResult, "cf", "congestionLength2");
-                 }
-            afterTime = minuteTimestamp + 120000;
-                  afterResult = table.get(new Get(Bytes.toBytes(String.valueOf(afterTime)))
-                .addColumn(Bytes.toBytes("cf"), Bytes.toBytes("congestionNum1"))
-                .addColumn(Bytes.toBytes("cf"), Bytes.toBytes("congestionLength1"))
-                .addColumn(Bytes.toBytes("cf"), Bytes.toBytes("congestionNum2"))
-                .addColumn(Bytes.toBytes("cf"), Bytes.toBytes("congestionLength2")));
-                 if (!beforeResult.isEmpty()) {
-                     result[0] = getIntValue(afterResult, "cf", "congestionNum1");
-                     result[1] = getIntValue(afterResult, "cf", "congestionLength1");
-                     result[2] = getIntValue(afterResult, "cf", "congestionNum2");
-                     result[3] = getIntValue(afterResult, "cf", "congestionLength2");
-                 }
-
+            // 如果找到最近的行，提取其值
+            if (closestResult != null) {
+                num1 = getIntValue(closestResult, "cf", "CongestionNum_1");
+                length1 = getFloatValue(closestResult, "cf", "CongestionLength_1");
+                num2 = getIntValue(closestResult, "cf", "CongestionNum_2");
+                length2 = getFloatValue(closestResult, "cf", "CongestionLength_2");
+                found = true;
             }
         }
     }
 
-    return new firstResult(result[0],result[2],result[1],result[3]);
+    return new firstResult(num1, num2, length1, length2);
 }
     public static int[] getOne(List<String> rowkeys) throws IOException {
         Configuration conf = HBaseConfiguration.create();
-        conf.set("hbase.zookeeper.quorum", "100.65.38.139,100.65.38.140,100.65.38.141,100.65.38.142,100.65.38.36,100.65.38.37,100.65.38.38");
+        conf.set("hbase.zookeeper.quorum", "100.65.38.139,100.65.38.140,100.65.38.141,100.65.38.142,10.48.53.80");
         conf.set("hbase.zookeeper.property.clientPort", "2181");
 
         int[] result = new int[2];  // result[0]=upSum, result[1]=downSum
 
         try (Connection connection = ConnectionFactory.createConnection(conf);
-             Table table = connection.getTable(TableName.valueOf("tab"))) {
+             Table table = connection.getTable(TableName.valueOf("tabl"))) {
 
             // 构建批量Get请求
             List<Get> gets = new ArrayList<>(rowkeys.size());
@@ -1036,7 +1156,7 @@ long elapsed = st1 - st;  // 计算耗时
 
         List<Pair<CongestionEvent, Long>> congs = new ArrayList<>();
         Configuration conf = HBaseConfiguration.create();
-        conf.set("hbase.zookeeper.quorum", "100.65.38.139,100.65.38.140,100.65.38.141,100.65.38.142,100.65.38.36,100.65.38.37,100.65.38.38");
+        conf.set("hbase.zookeeper.quorum", "100.65.38.139,100.65.38.140,100.65.38.141,100.65.38.142,10.48.53.80");
         conf.set("hbase.zookeeper.property.clientPort", "2181");
         boolean a = true;
         int i = 0;
@@ -1094,7 +1214,7 @@ long elapsed = st1 - st;  // 计算耗时
     }
     public static void getByRowkey(String tableName, String rowkey) throws IOException {
         Configuration conf = HBaseConfiguration.create();
-        conf.set("hbase.zookeeper.quorum", "100.65.38.139,100.65.38.140,100.65.38.141,100.65.38.142,100.65.38.36,100.65.38.37,100.65.38.38");  // Zookeeper 地址
+        conf.set("hbase.zookeeper.quorum", "100.65.38.139,100.65.38.140,100.65.38.141,100.65.38.142,10.48.53.80");  // Zookeeper 地址
         conf.set("hbase.zookeeper.property.clientPort", "2181");  // Zookeeper 端口
         try (Connection connection = ConnectionFactory.createConnection(conf);
              Table table = connection.getTable(TableName.valueOf(tableName))) {
@@ -1120,7 +1240,7 @@ long elapsed = st1 - st;  // 计算耗时
     public static List<VehicleSeg> getVeByRowkey(String tableName, String rowkey) {
         List<VehicleSeg> vehicleSegs = new ArrayList<>();
         Configuration conf = HBaseConfiguration.create();
-        conf.set("hbase.zookeeper.quorum", "100.65.38.139,100.65.38.140,100.65.38.141,100.65.38.142,100.65.38.36,100.65.38.37,100.65.38.38");
+        conf.set("hbase.zookeeper.quorum", "100.65.38.139,100.65.38.140,100.65.38.141,100.65.38.142,10.48.53.80");
         conf.set("hbase.zookeeper.property.clientPort", "2181");
 
         try (Connection connection = ConnectionFactory.createConnection(conf)) {
@@ -1152,10 +1272,59 @@ long elapsed = st1 - st;  // 计算耗时
         }
         return vehicleSegs;
     }
+ public static List<VehicleSeg> getVeByRowkeys(String tableName, String rowkey,String rowkey1) {
+        List<VehicleSeg> vehicleSegs = new ArrayList<>();
+        Configuration conf = HBaseConfiguration.create();
+        conf.set("hbase.zookeeper.quorum", "100.65.38.139,100.65.38.140,100.65.38.141,100.65.38.142,10.48.53.80");
+        conf.set("hbase.zookeeper.property.clientPort", "2181");
 
+        try (Connection connection = ConnectionFactory.createConnection(conf)) {
+            // 检查表是否存在
+            if (!isTableExists(connection, tableName)) {
+                System.out.println("表 " + tableName + " 不存在");
+                return vehicleSegs; // 直接返回空列表
+            }
+
+            try (Table table = connection.getTable(TableName.valueOf(tableName))) {
+                Get get = new Get(Bytes.toBytes(rowkey));
+                get.addColumn(Bytes.toBytes("cf"), Bytes.toBytes("VehicleSegments"));
+                Result result = table.get(get);
+
+                byte[] valueBytes = result.getValue(Bytes.toBytes("cf"), Bytes.toBytes("VehicleSegments"));
+                if (valueBytes != null) {
+                    String value = Bytes.toString(valueBytes);
+                    JSONArray objects = JSON.parseArray(value);
+                    for (Object object : objects) {
+                        vehicleSegs.add(JSON.parseObject(object.toString(), VehicleSeg.class));
+                    }
+                } else {
+                    System.out.println("列 cf/VehicleSegments 不存在或值为空");
+                }
+
+                Get get1 = new Get(Bytes.toBytes(rowkey1));
+                get.addColumn(Bytes.toBytes("cf"), Bytes.toBytes("VehicleSegments"));
+                result = table.get(get1);
+
+                valueBytes = result.getValue(Bytes.toBytes("cf"), Bytes.toBytes("VehicleSegments"));
+                if (valueBytes != null) {
+                    String value = Bytes.toString(valueBytes);
+                    JSONArray objects = JSON.parseArray(value);
+                    for (Object object : objects) {
+                        vehicleSegs.add(JSON.parseObject(object.toString(), VehicleSeg.class));
+                    }
+                } else {
+                    System.out.println("列 cf/VehicleSegments 不存在或值为空");
+                }
+            }
+        } catch (IOException e) {
+            System.err.println("HBase操作异常: " + e.getMessage());
+            // 可选择记录日志，但不抛出异常
+        }
+        return vehicleSegs;
+    }
     public static List<CrowdedInfo> getCrowdedByRowkey(String tableName, String rowkey) throws IOException {
         Configuration conf = HBaseConfiguration.create();
-        conf.set("hbase.zookeeper.quorum", "100.65.38.139,100.65.38.140,100.65.38.141,100.65.38.142,100.65.38.36,100.65.38.37,100.65.38.38");  // Zookeeper 地址
+        conf.set("hbase.zookeeper.quorum", "100.65.38.139,100.65.38.140,100.65.38.141,100.65.38.142,10.48.53.80");  // Zookeeper 地址
         conf.set("hbase.zookeeper.property.clientPort", "2181");  // Zookeeper 端口
         List<CrowdedInfo> crowdedInfos = new ArrayList<>();
         try (Connection connection = ConnectionFactory.createConnection(conf);
@@ -1250,15 +1419,6 @@ long elapsed = st1 - st;  // 计算耗时
         }
 
     }
-
-    public static int getDayOfYear(long timestamp) {
-        // 1. 将时间戳转换为带时区的日期时间对象
-        ZonedDateTime zdt = Instant.ofEpochMilli(timestamp)
-                                  .atZone(ZoneId.systemDefault());
-
-        // 2. 获取该日期在一年中的序号（1月1日=1，12月31日=365或366）
-        return zdt.getDayOfYear();
-    }
   public static int[] getYearToDateTraffic(long timestamp) throws IOException {
     // 1. 确定时间范围
     ZonedDateTime dateTime = Instant.ofEpochMilli(timestamp).atZone(ZoneId.systemDefault());
@@ -1272,7 +1432,7 @@ long elapsed = st1 - st;  // 计算耗时
     // 2. 预聚合数据结构
     int upTotal = 0;
     int downTotal = 0;
-    Configuration conf = getHBaseConfiguration();
+    org.apache.hadoop.conf.Configuration conf = getHBaseConfiguration();
 
     try (Connection connection = ConnectionFactory.createConnection(conf)) {
         // 3. 获取所有需要查询的表
@@ -1293,8 +1453,14 @@ long elapsed = st1 - st;  // 计算耗时
             }
         }
 
-        // 4. 创建线程池并行处理表扫描
-        ExecutorService executor = Executors.newFixedThreadPool(Math.min(tablesToScan.size(), 10));
+        // 4. 如果没有需要扫描的表，直接返回
+        if (tablesToScan.isEmpty()) {
+            return new int[]{0, 0};
+        }
+
+        // 5. 创建线程池并行处理表扫描
+        int threadCount = Math.max(1, Math.min(tablesToScan.size(), 10)); // 确保至少1个线程
+        ExecutorService executor = Executors.newFixedThreadPool(threadCount);
         List<Future<int[]>> futures = new ArrayList<>();
 
         for (TableName tableName : tablesToScan) {
@@ -1338,7 +1504,7 @@ long elapsed = st1 - st;  // 计算耗时
             }));
         }
 
-        // 5. 汇总结果
+        // 6. 汇总结果
         for (Future<int[]> future : futures) {
             int[] counts = future.get();
             upTotal += counts[0];
@@ -1352,6 +1518,17 @@ long elapsed = st1 - st;  // 计算耗时
 
     return new int[]{upTotal, downTotal};
 }
+    public static int getDayOfYear(long timestamp) {
+        // 1. 将时间戳转换为带时区的日期时间对象
+        ZonedDateTime zdt = Instant.ofEpochMilli(timestamp)
+                                  .atZone(ZoneId.systemDefault());
+
+        // 2. 获取该日期在一年中的序号（1月1日=1，12月31日=365或366）
+        return zdt.getDayOfYear();
+    }
+
+
+
     @Data
     @Getter
     @Setter

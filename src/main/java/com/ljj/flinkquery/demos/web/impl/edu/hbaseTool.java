@@ -30,7 +30,7 @@ public class hbaseTool {
 
         // 格式化为字符串
         String dateTimeStr = dateTime.format(formatter);
-        return "STCar_"+dateTimeStr;
+        return "JTSTCar_"+dateTimeStr;
     }
         public static String convertToCongestionTableName (long timestamp,int direction){
         // 定义日期时间格式
