@@ -2,9 +2,11 @@ package com.ljj.flinkquery.demos.entity;
 
 import lombok.Getter;
 import lombok.Setter;
+import lombok.ToString;
 
 @Setter
 @Getter
+@ToString
 public class VehicleSeg {
     private Long carId;
     private String plateNo;

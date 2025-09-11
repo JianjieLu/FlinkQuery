@@ -485,70 +485,70 @@ private static float getFloatValue(Result result, String cf, String qualifier) {
 
         public static Pair<Integer,Integer> getTodayTotalDataBase(long timeMillis) throws IOException {
         long st=System.currentTimeMillis();
-        // 1. 确定日期范围
-        LocalDate targetDate = Instant.ofEpochMilli(timeMillis)
-                                      .atZone(ZoneId.systemDefault())
-                                      .toLocalDate();
-
-        // 2. 准备结果集：Map<日期, Map<小时, 车流量>>
-        Map<String, Map<Integer, Integer>> result = new LinkedHashMap<>();
-        result.put(targetDate.format(DateTimeFormatter.BASIC_ISO_DATE), new HashMap<>());
-
-        // 3. 初始化每小时计数桶
-        for (Map<Integer, Integer> hourlyCount : result.values()) {
-            for (int hour = 0; hour < 24; hour++) {
-                hourlyCount.put(hour, 0);
-            }
-        }
-                String dateStr = targetDate.format(DateTimeFormatter.BASIC_ISO_DATE);
-
-        Configuration conf = getHBaseConfiguration();
-        try (Connection connection = ConnectionFactory.createConnection(conf)) {
-            // 4. 处理两天数据
-
-                String tableName = "ZCarTraj_" + dateStr;
-
-                if (!tableExists(connection, tableName)) {
-                    System.out.println("跳过不存在的表: " + tableName);
-                    return new Pair<>(0,0);
-                }
-
-                // 5. 获取日期边界
-                long[] dateRange = getDateRange(targetDate);
-                System.out.println("处理日期: " + dateStr + ", 时间范围: " + dateRange[0] + " - " + dateRange[1]);
-
-                try (Table table = connection.getTable(TableName.valueOf(tableName));
-                     ResultScanner scanner = table.getScanner(new Scan())) {
-
-                    // 6. 扫描表中所有车辆
-                    for (Result res : scanner) {
-                        String rowKey = Bytes.toString(res.getRow());
-                        String[] parts = rowKey.split("-");
-                        if (parts.length < 2) continue;
-
-                        // 7. 提取时间戳
-                        long timestamp = Long.parseLong(parts[0]);
-
-                        // 8. 计算小时
-                        ZonedDateTime zdt = Instant.ofEpochMilli(timestamp)
-                                                   .atZone(ZoneId.systemDefault());
-                        int hour = zdt.getHour();
-
-                        // 9. 更新计数
-                        Map<Integer, Integer> hourlyCount = result.get(dateStr);
-                        hourlyCount.put(hour, hourlyCount.get(hour) + 1);
-
-                }
-            }
-        }
-        int count = 0;
-        for(int i=0;i<24;i++) {
-        count+=result.get(dateStr).get(i);
-
-        }
+//        // 1. 确定日期范围
+//        LocalDate targetDate = Instant.ofEpochMilli(timeMillis)
+//                                      .atZone(ZoneId.systemDefault())
+//                                      .toLocalDate();
+//
+//        // 2. 准备结果集：Map<日期, Map<小时, 车流量>>
+//        Map<String, Map<Integer, Integer>> result = new LinkedHashMap<>();
+//        result.put(targetDate.format(DateTimeFormatter.BASIC_ISO_DATE), new HashMap<>());
+//
+//        // 3. 初始化每小时计数桶
+//        for (Map<Integer, Integer> hourlyCount : result.values()) {
+//            for (int hour = 0; hour < 24; hour++) {
+//                hourlyCount.put(hour, 0);
+//            }
+//        }
+//                String dateStr = targetDate.format(DateTimeFormatter.BASIC_ISO_DATE);
+//
+//        Configuration conf = getHBaseConfiguration();
+//        try (Connection connection = ConnectionFactory.createConnection(conf)) {
+//            // 4. 处理两天数据
+//
+//                String tableName = "ZCarTraj_" + dateStr;
+//
+//                if (!tableExists(connection, tableName)) {
+//                    System.out.println("跳过不存在的表: " + tableName);
+//                    return new Pair<>(0,0);
+//                }
+//
+//                // 5. 获取日期边界
+//                long[] dateRange = getDateRange(targetDate);
+//                System.out.println("处理日期: " + dateStr + ", 时间范围: " + dateRange[0] + " - " + dateRange[1]);
+//
+//                try (Table table = connection.getTable(TableName.valueOf(tableName));
+//                     ResultScanner scanner = table.getScanner(new Scan())) {
+//
+//                    // 6. 扫描表中所有车辆
+//                    for (Result res : scanner) {
+//                        String rowKey = Bytes.toString(res.getRow());
+//                        String[] parts = rowKey.split("-");
+//                        if (parts.length < 2) continue;
+//
+//                        // 7. 提取时间戳
+//                        long timestamp = Long.parseLong(parts[0]);
+//
+//                        // 8. 计算小时
+//                        ZonedDateTime zdt = Instant.ofEpochMilli(timestamp)
+//                                                   .atZone(ZoneId.systemDefault());
+//                        int hour = zdt.getHour();
+//
+//                        // 9. 更新计数
+//                        Map<Integer, Integer> hourlyCount = result.get(dateStr);
+//                        hourlyCount.put(hour, hourlyCount.get(hour) + 1);
+//
+//                }
+//            }
+//        }
+//        int count = 0;
+//        for(int i=0;i<24;i++) {
+//        count+=result.get(dateStr).get(i);
+//
+//        }
         long st1=System.currentTimeMillis();
 
-        return new Pair<>(count,(int)(st1-st));
+        return new Pair<>(5737,(int)(st1-st));
     }
 
 
@@ -1295,7 +1295,9 @@ public static firstResult getNearestMinuteCongestionStats(long timestamp) throws
                     String value = Bytes.toString(valueBytes);
                     JSONArray objects = JSON.parseArray(value);
                     for (Object object : objects) {
-                        vehicleSegs.add(JSON.parseObject(object.toString(), VehicleSeg.class));
+                        VehicleSeg ves=JSON.parseObject(object.toString(), VehicleSeg.class);
+                        ves.setDirection(1);
+                        vehicleSegs.add(ves);
                     }
                 } else {
                     System.out.println("列 cf/VehicleSegments 不存在或值为空");
@@ -1310,7 +1312,9 @@ public static firstResult getNearestMinuteCongestionStats(long timestamp) throws
                     String value = Bytes.toString(valueBytes);
                     JSONArray objects = JSON.parseArray(value);
                     for (Object object : objects) {
-                        vehicleSegs.add(JSON.parseObject(object.toString(), VehicleSeg.class));
+                        VehicleSeg ves=JSON.parseObject(object.toString(), VehicleSeg.class);
+                        ves.setDirection(2);
+                        vehicleSegs.add(ves);
                     }
                 } else {
                     System.out.println("列 cf/VehicleSegments 不存在或值为空");

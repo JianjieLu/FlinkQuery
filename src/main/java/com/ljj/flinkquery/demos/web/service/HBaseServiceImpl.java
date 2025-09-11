@@ -34,6 +34,7 @@ import com.ljj.flinkquery.demos.entity.stakeEnvents.*;
 import com.ljj.flinkquery.demos.entity.GeoUtils.*;
 
 
+import static com.ljj.flinkquery.FlinkQueryApplication.getSau;
 import static com.ljj.flinkquery.FlinkQueryApplication.resultMap;
 import static com.ljj.flinkquery.demos.entity.data.Utils.convertFromTimestampMillis;
 import static com.ljj.flinkquery.demos.web.impl.edu.tableOps.TrafficDataAggregator.aggregateDaily;
@@ -202,7 +203,7 @@ private String calculateLOS(double density) {
         String zaStartMil = "";
         String zaEndMil = "";
         TimeSpatialData kong = new TimeSpatialData(0,0,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, "0","0");
-        TimeSpatialResult t2 = new TimeSpatialResult(200, "内存查找————无范围内数据,原因：桩号转换失败", kong, true);
+        TimeSpatialResult t2 = new TimeSpatialResult(200, "————无范围内数据,原因：桩号转换失败", kong, true);
         TimeSpatialData tos = new TimeSpatialData();
         boolean za = true;
         boolean main = true;
@@ -289,7 +290,7 @@ private String calculateLOS(double density) {
             zadaoInfo = zadaoInfo + "AK" + startM + "to AK" + endM + "," + st + " to " + tt + "  ";
             for (long i = st; i < tt; i += 1000) {
                 for (int j = startM; j < endM; j++) {
-                    String redisKey = "v" + i + "_AK" + j;
+                    String redisKey = "v60_" + i + "_AK" + j;
                     List<VehicleSeg> l = ge(redisTemplate, redisKey);
                     for (VehicleSeg vs : l) {
                         //判断是否有重复出
@@ -335,7 +336,7 @@ private String calculateLOS(double density) {
 
             for (long i = st; i < tt; i += 1000) {
                 for (int j = startM; j < endM; j++) {
-                    String redisKey = "v" + i + "_BK" + j;
+                    String redisKey = "v60_" + i + "_BK" + j;
 
                     List<VehicleSeg> l = ge(redisTemplate, redisKey);
 
@@ -383,7 +384,7 @@ private String calculateLOS(double density) {
             zadaoInfo = zadaoInfo + "CK" + startM + "to CK" + endM + "," + st + " to " + tt + "  ";
             for (long i = st; i < tt; i += 1000) {
                 for (int j = startM; j < endM; j++) {
-                    String redisKey = "v" + i + "_CK" + j;
+                    String redisKey = "v60_" + i + "_CK" + j;
                     List<VehicleSeg> l = ge(redisTemplate, redisKey);
                     for (VehicleSeg vs : l) {
                         //判断是否有重复出
@@ -426,7 +427,7 @@ private String calculateLOS(double density) {
             zadaoInfo = zadaoInfo + "DK" + startM + "to DK" + endM + "," + st + " to " + tt + "  ";
             for (long i = st; i < tt; i += 1000) {
                 for (int j = startM; j < endM; j++) {
-                    String redisKey = "v" + i + "_DK" + j;
+                    String redisKey = "v60_" + i + "_DK" + j;
                     List<VehicleSeg> l = ge(redisTemplate, redisKey);
 
                     for (VehicleSeg vs : l) {
@@ -528,11 +529,9 @@ private String calculateLOS(double density) {
 //                System.out.println("startMil:" + startMil + "   endMil:" + endMil + "  startM:" + startM + "   endm:" + endM + "st:" + st + "tt" + tt);//startMil:K1054   endMil:K1048  startM:1049   endm:1054
             for (long i = st; i < tt; i += 1000) {
                 for (int j = startM; j < endM; j++) {
-
-                    String redisKey = "v" + i + "_K" + j;
+                    String redisKey = "v60_" + i + "_K" + j;
 //                    System.out.println(redisKey);
                     List<VehicleSeg> l = ge(redisTemplate, redisKey);
-
                     for (VehicleSeg vs : l) {
                         //判断是否有重复出
                         if (m.get(vs.getCarId()) == null) {
@@ -546,8 +545,6 @@ private String calculateLOS(double density) {
                             vs.setSpecialFlag(vs.getSpecialFlag());
                             m.put(vs.getCarId(), vs);
                         }
-
-
                     }
                 }
             }
@@ -555,15 +552,11 @@ private String calculateLOS(double density) {
         m.forEach((k, v) -> {
             v.setAverageSpeed((int) (v.getSpeedSum() / v.getPointSum()));
         });
-
-
         for (Map.Entry<Long, VehicleSeg> entry : m.entrySet()) {
-
             VehicleSeg v = entry.getValue();
             if (v != null) {
                 n++;
                 sum += v.getAverageSpeed();
-
                 if (v.getDirection() == 1) {
                     shangxing1++;
                     shangxingSum += v.getAverageSpeed();
@@ -667,14 +660,14 @@ if (n > 0 && (endM - startM) > 0) {
         if (main && za) {
             tos.setZaTrafficSaturation( zaSau(2200*(tt - st) / 3600000.0,zn));
             // 四舍五入保留两位小数
-            tos.setTrafficSaturation(Math.round(mainSau(2200 * 8 * (tt - st) / 3600000.0,n) * 100.0) / 100.0);
-            tos.setUpTrafficSaturation(Math.round(mainSau(2200 * 4 * (tt - st) / 3600000.0,(upkeche+uphuoche)) * 100.0) / 100.0);
-            tos.setDownTrafficSaturation(Math.round(mainSau(2200 * 4 * (tt - st) / 3600000.0,(downkeche+downhuoche)) * 100.0) / 100.0);
+            tos.setTrafficSaturation(Math.round(getSau() * 100.0) / 100.0);
+            tos.setUpTrafficSaturation(Math.round(getSau(upkeche+uphuoche) * 100.0) / 100.0);
+            tos.setDownTrafficSaturation(Math.round(getSau(downkeche+downhuoche) * 100.0) / 100.0);
             return new TimeSpatialResult(200, "内存查找————匝道、主路均有数据    查询用时：" + (System.currentTimeMillis() - t1) + "ms   查询时间段：" + convertFromTimestampMillis(st) + " to " + convertFromTimestampMillis(tt) + ",桩号：K" + startM + " to K" + endM + "  " + zadaoInfo + "   查询主路路段数：" + (endM - startM) + "   查询时段数：" + (tt - st) / 1000, tos, true);
         } else if (main && !za){
-            tos.setTrafficSaturation(Math.round(mainSau(2200 * 8 * (tt - st) / 3600000.0,n) * 100.0) / 100.0);
-            tos.setUpTrafficSaturation(Math.round(mainSau(2200 * 4 * (tt - st) / 3600000.0,(upkeche+uphuoche)) * 100.0) / 100.0);
-            tos.setDownTrafficSaturation(Math.round(mainSau(2200 * 4 * (tt - st) / 3600000.0,(downkeche+downhuoche)) * 100.0) / 100.0);
+            tos.setTrafficSaturation(Math.round(getSau() * 100.0) / 100.0);
+            tos.setUpTrafficSaturation(Math.round(getSau(upkeche+uphuoche) * 100.0) / 100.0);
+            tos.setDownTrafficSaturation(Math.round(getSau((downkeche+downhuoche)) * 100.0) / 100.0);
 
             return new TimeSpatialResult(200, "内存查找————主路有数据,匝道无数据,查询用时：" + (System.currentTimeMillis() - t1) + "ms   查询时间段：" + convertFromTimestampMillis(st) + " to " + convertFromTimestampMillis(tt) + ",桩号：K" + startM + " to K" + endM + "   查询主路路段数：" + (endM - startM) + "   查询时段数：" + (tt - st) / 1000, tos, true);
         }
@@ -1221,16 +1214,16 @@ if (n > 0 && (endM - startM) > 0) {
             double minutes = timeWindow / 60000.0; // 转换为分钟
             if (main && za) {
               tos.setZaTrafficSaturation( zaSau(2200*(tt - st) / 3600000.0,zn));
-            tos.setTrafficSaturation(Math.round(mainSau(2200 * 8 * (tt - st) / 3600000.0,n) * 100.0) / 100.0);
- tos.setUpTrafficSaturation(Math.round(mainSau(2200 * 4 * (tt - st) / 3600000.0,(upkeche+uphuoche)) * 100.0) / 100.0);
-            tos.setDownTrafficSaturation(Math.round(mainSau(2200 * 4 * (tt - st) / 3600000.0,(downkeche+downhuoche)) * 100.0) / 100.0);
+            tos.setTrafficSaturation(Math.round(getSau() * 100.0) / 100.0);
+ tos.setUpTrafficSaturation(Math.round(getSau(upkeche+uphuoche) * 100.0) / 100.0);
+            tos.setDownTrafficSaturation(Math.round(getSau((downkeche+downhuoche)) * 100.0) / 100.0);
 
                 return new TimeSpatialResult(200, "实时查找————匝道、主路均有数据    查询用时：" + (System.currentTimeMillis() - t1) + "ms   查询时间段：" + convertFromTimestampMillis(st) + " to " + convertFromTimestampMillis(tt) + ",桩号：K" + startM + " to K" + endM + "  " + zadaoInfo + "   查询主路路段数：" + (endM - startM) + "   查询时段数：" + (tt - st) / 1000, tos, true);
             } else if (main && !za)
             {
-            tos.setTrafficSaturation(Math.round(mainSau(2200 * 8 * (tt - st) / 3600000.0,n) * 100.0) / 100.0);
- tos.setUpTrafficSaturation(Math.round(mainSau(2200 * 4 * (tt - st) / 3600000.0,(upkeche+uphuoche)) * 100.0) / 100.0);
-            tos.setDownTrafficSaturation(Math.round(mainSau(2200 * 4 * (tt - st) / 3600000.0,(downkeche+downhuoche)) * 100.0) / 100.0);
+            tos.setTrafficSaturation(Math.round(getSau() * 100.0) / 100.0);
+ tos.setUpTrafficSaturation(Math.round(getSau(upkeche+uphuoche) * 100.0) / 100.0);
+            tos.setDownTrafficSaturation(Math.round(getSau((downkeche+downhuoche)) * 100.0) / 100.0);
 
                 return new TimeSpatialResult(200, "实时查找————主路有数据,匝道无数据,查询用时：" + (System.currentTimeMillis() - t1) + "ms   查询时间段：" + convertFromTimestampMillis(st) + " to " + convertFromTimestampMillis(tt) + ",桩号：K" + startM + " to K" + endM + "   查询主路路段数：" + (endM - startM) + "   查询时段数：" + (tt - st) / 1000, tos, true);
             }
@@ -1747,16 +1740,16 @@ if (n > 0 && (endM - startM) > 0) {
             long timeWindow = (tt - st);          // 时间窗口（毫秒）
             double minutes = timeWindow / 60000.0; // 转换为分钟
             if (main && za) {
-                tos.setTrafficSaturation(Math.round(mainSau(2200 * 8 * (tt - st) / 3600000.0,n) * 100.0) / 100.0);
+                tos.setTrafficSaturation(Math.round(getSau() * 100.0) / 100.0);
                 tos.setZaTrafficSaturation( zaSau(2200*(tt - st) / 3600000.0,zn));
- tos.setUpTrafficSaturation(Math.round(mainSau(2200 * 4 * (tt - st) / 3600000.0,(upkeche+uphuoche)) * 100.0) / 100.0);
-            tos.setDownTrafficSaturation(Math.round(mainSau(2200 * 4 * (tt - st) / 3600000.0,(downkeche+downhuoche)) * 100.0) / 100.0);
+ tos.setUpTrafficSaturation(Math.round(getSau(upkeche+uphuoche) * 100.0) / 100.0);
+            tos.setDownTrafficSaturation(Math.round(getSau(downkeche+downhuoche) * 100.0) / 100.0);
 
                 return new TimeSpatialResult(200, "数据库查找————匝道、主路均有数据,查询用时：" + (System.currentTimeMillis() - t1) + "ms   查询时间段：" + convertFromTimestampMillis(st) + " to " + convertFromTimestampMillis(tt) + ",桩号：K" + startM + " to K" + endM + "  " + zadaoInfo + "   查询主路路段数：" + (endM - startM) + "   查询时段数：" + (tt - st) / 60000, tos, true);
             } else if (main && !za) {
-                tos.setTrafficSaturation(Math.round(mainSau(2200 * 8 * (tt - st) / 3600000.0,n) * 100.0) / 100.0);
- tos.setUpTrafficSaturation(Math.round(mainSau(2200 * 4 * (tt - st) / 3600000.0,(upkeche+uphuoche)) * 100.0) / 100.0);
-            tos.setDownTrafficSaturation(Math.round(mainSau(2200 * 4 * (tt - st) / 3600000.0,(downkeche+downhuoche)) * 100.0) / 100.0);
+                tos.setTrafficSaturation(Math.round(getSau() * 100.0) / 100.0);
+ tos.setUpTrafficSaturation(Math.round(getSau(upkeche+uphuoche) * 100.0) / 100.0);
+            tos.setDownTrafficSaturation(Math.round(getSau(downkeche+downhuoche) * 100.0) / 100.0);
 
                 return new TimeSpatialResult(200, "数据库查找————主路有数据,匝道无数据,查询用时：" + (System.currentTimeMillis() - t1) + "ms   查询时间段：" + convertFromTimestampMillis(st) + " to " + convertFromTimestampMillis(tt) + ",桩号：K" + startM + " to K" + endM + "   查询主路路段数：" + (endM - startM) + "   查询时段数：" + (tt - st) / 60000, tos, true);
             }else if (!main && za) {

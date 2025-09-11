@@ -1,6 +1,9 @@
 package com.ljj.flinkquery.demos.web.controller;
 
-import com.alibaba.fastjson2.JSONObject;
+import com.ljj.flinkquery.FlinkQueryApplication;
+import com.ljj.flinkquery.demos.entity.watch.sectionLosResult;
+import com.ljj.flinkquery.demos.entity.watch.zaEachSitResult;
+import org. json. JSONObject;
 import com.ljj.flinkquery.demos.entity.SectionalBatchFlowResult;
 import com.ljj.flinkquery.demos.entity.SectionalFlowQuery;
 import com.ljj.flinkquery.demos.entity.newFive.firstResult;
@@ -182,14 +185,14 @@ public class BasicController {
             throw new RuntimeException("车流量统计异常: " + e.getMessage(), e);
         }
     }
-@PostMapping("/getUpDownChargerByDuration")
-public upDownResult getUpDownChargerByDuration(
-        @RequestBody Map<String, String> requestParams) { // 改用 RequestBody 接收 JSON 参数
 
+
+
+@PostMapping("/getUpDownChargerByDuration")
+public upDownResult getUpDownChargerByDuration(@RequestBody Map<String, String> requestParams) { // 改用 RequestBody 接收 JSON 参数
     String stationId = requestParams.get("stationId");
     String beginTime = requestParams.get("beginTime");
     String endTime = requestParams.get("endTime");
-
     try {
         return basicService.getUpDownChargerByDuration(stationId, beginTime, endTime);
     } catch (Exception e) {
@@ -197,21 +200,59 @@ public upDownResult getUpDownChargerByDuration(
         throw new RuntimeException("车流量统计异常: " + e.getMessage(), e);
     }
 }
+
+
   @PostMapping("/getBatchUpDownCharger")
-    public List<upDownResult> getBatchSectionalFlow(
+    public List<upDownResult> getBatchUpDownCharger(
          List<String> stationIds,String beginTime,String endTime) {
-return null;
-//        return basicService.getBatchUpDownCharger(stationIds,beginTime,endTime);
+//         return null;
+        return basicService.getBatchUpDownCharger(stationIds,beginTime,endTime);
     }
+
+
 @GetMapping("/plateNumbers")
 public Set<String> getAllPlateNumbers() {
     return basicService.getAllPlateNumbers();
 }
-@GetMapping("/getTrj")
 
-public List<JSONObject> getTrajectoryByPlateNo(String plateNo) throws IOException {
+
+@GetMapping("/getTrj")
+public FlinkQueryApplication.trj getTrajectoryByPlateNo(String plateNo) throws IOException {
         return basicService.getTrajectoryByPlateNo(plateNo);
 }
+@PostMapping("/sectionLOS")
+public sectionLosResult sectionLOS(@RequestBody Map<String, String> requestParams) { // 改用 RequestBody 接收 JSON 参数
+    String startStake = requestParams.get("startStake");
+    String endStake = requestParams.get("endStake");
+    String beginTime = requestParams.get("beginTime");
+    String endTime = requestParams.get("endTime");
+    try {
+        return basicService.sectionLOS(beginTime, endTime, startStake,endStake);
+    } catch (Exception e) {
+        log.error("车流量统计失败: ", e);
+        throw new RuntimeException("车流量统计异常: " + e.getMessage(), e);
+    }
+}
+
+@PostMapping("/zaSectionLOS")
+public sectionLosResult zaSectionLOS(@RequestBody Map<String, String> requestParams) { // 改用 RequestBody 接收 JSON 参数
+    String facilitiesId = requestParams.get("facilitiesId");
+    String beginTime = requestParams.get("beginTime");
+    String endTime = requestParams.get("endTime");
+    try {
+        return basicService.zaSectionLOS(beginTime, endTime,facilitiesId);
+    } catch (Exception e) {
+        log.error("车流量统计失败: ", e);
+        throw new RuntimeException("车流量统计异常: " + e.getMessage(), e);
+    }
+}
+
+  @PostMapping("/zaEachSit")
+    public List<zaEachSitResult> zaEachSit(
+         List<String> stationId,String beginTime,String endTime,int level) throws Exception {
+//         return null;
+        return basicService.zaEachSit(stationId,beginTime,endTime,level);
+    }
 }
 
 //车流量   桩号，经纬度，起止时间，平均车速，交通饱和度
