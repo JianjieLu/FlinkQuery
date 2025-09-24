@@ -181,7 +181,7 @@ public class FlinkQueryApplication {
 
                     @Override
                     public VehicleSegAccumulator add(PathPoint ppoint, VehicleSegAccumulator vehicleSegAcc) {
-                        vehicleSegAcc.setCurrentKey(convertToTimestampMillis(ppoint.getTimeStamp()) / 10000 * 10000 + "_" + ppoint.getStakeId().split("\\+")[0]);
+                        vehicleSegAcc.setCurrentKey(convertToTimestampMillis(ppoint.getTimeStamp()) / 1000 * 1000 + "_" + ppoint.getStakeId().split("\\+")[0]);
                         Map<Long, VehicleSeg> vehicleSegMap = vehicleSegAcc.getVehicleSegMap();
 
                         if (!vehicleSegMap.containsKey(ppoint.getId())) {

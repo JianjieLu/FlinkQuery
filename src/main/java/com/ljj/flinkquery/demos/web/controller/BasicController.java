@@ -1,8 +1,14 @@
 package com.ljj.flinkquery.demos.web.controller;
 
 import com.ljj.flinkquery.FlinkQueryApplication;
+import com.ljj.flinkquery.demos.entity.watch.carNumResult;
+import com.ljj.flinkquery.demos.entity.watch.flowNo;
 import com.ljj.flinkquery.demos.entity.watch.sectionLosResult;
 import com.ljj.flinkquery.demos.entity.watch.zaEachSitResult;
+import com.ljj.flinkquery.demos.web.impl.edu.tableOps.totalOpsv3;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.Setter;
 import org. json. JSONObject;
 import com.ljj.flinkquery.demos.entity.SectionalBatchFlowResult;
 import com.ljj.flinkquery.demos.entity.SectionalFlowQuery;
@@ -200,15 +206,15 @@ public upDownResult getUpDownChargerByDuration(@RequestBody Map<String, String> 
         throw new RuntimeException("车流量统计异常: " + e.getMessage(), e);
     }
 }
-
-
-  @PostMapping("/getBatchUpDownCharger")
-    public List<upDownResult> getBatchUpDownCharger(
-         List<String> stationIds,String beginTime,String endTime) {
-//         return null;
-        return basicService.getBatchUpDownCharger(stationIds,beginTime,endTime);
-    }
-
+@PostMapping("/getBatchUpDownCharger")
+public List<upDownResult> getBatchUpDownCharger(@RequestBody BatchQueryRequest request) {
+    return basicService.getBatchUpDownCharger(
+        request.getStationId(),
+        request.getBeginTime(),
+        request.getEndTime(),
+        request.getLevel()
+    );
+}
 
 @GetMapping("/plateNumbers")
 public Set<String> getAllPlateNumbers() {
@@ -248,11 +254,53 @@ public sectionLosResult zaSectionLOS(@RequestBody Map<String, String> requestPar
 }
 
   @PostMapping("/zaEachSit")
-    public List<zaEachSitResult> zaEachSit(
+    public zaEachSitResult zaEachSit(
          List<String> stationId,String beginTime,String endTime,int level) throws Exception {
 //         return null;
         return basicService.zaEachSit(stationId,beginTime,endTime,level);
     }
+
+    @PostMapping("/getFlowNo")
+public flowNo getFlowNo(@RequestBody Map<String, String> requestParams) { // 改用 RequestBody 接收 JSON 参数
+    String startStake = requestParams.get("startStake");
+    String endStake = requestParams.get("endStake");
+    String beginTime = requestParams.get("startTime");
+    String endTime = requestParams.get("endTime");
+    try {
+        return basicService.getFlowNo(beginTime, endTime, startStake,endStake);
+    } catch (Exception e) {
+        log.error("车流量统计失败: ", e);
+        throw new RuntimeException("车流量统计异常: " + e.getMessage(), e);
+    }
 }
 
+    @PostMapping("/getCarNumber")
+public carNumResult getCarNumber(@RequestBody Map<String, String> requestParams) { // 改用 RequestBody 接收 JSON 参数
+    String startStake = requestParams.get("startStake");
+    String endStake = requestParams.get("endStake");
+    String beginTime = requestParams.get("startTime");
+    String endTime = requestParams.get("endTime");
+    int level= Integer.parseInt(requestParams.get("level"));
+    try {
+        return basicService.getCarNumber(beginTime, endTime, startStake,endStake,level);
+    } catch (Exception e) {
+        log.error("车流量统计失败: ", e);
+        throw new RuntimeException("车流量统计异常: " + e.getMessage(), e);
+    }
+}
+}
+ @Setter
+ @Getter
+ @AllArgsConstructor
+ class BatchQueryRequest {
+     // getters 和 setters
+     private List<String> stationId;
+    private String beginTime;
+    private String endTime;
+    private int level;
+
+    // 必须有无参构造函数
+    public BatchQueryRequest() {}
+
+ }
 //车流量   桩号，经纬度，起止时间，平均车速，交通饱和度

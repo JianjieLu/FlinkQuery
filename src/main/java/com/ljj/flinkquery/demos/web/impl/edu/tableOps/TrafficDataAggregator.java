@@ -123,22 +123,6 @@ public class TrafficDataAggregator {
         long endTime = ZonedDateTime.of(2023, 6, 15, 17, 2, 0, 0, ZoneId.systemDefault())
                                     .toInstant().toEpochMilli();
 
-        // 生成分钟级测试数据
-        Map<Long, Integer> minuteData = generateTestData(startTime, endTime);
-
-        // 按小时聚合
-        Map<Long, Integer> hourlyData = aggregateHourly(minuteData, startTime, endTime);
-
-        // 打印结果
-        System.out.println("分钟级数据 (" + minuteData.size() + " 分钟):");
-        minuteData.forEach((minute, count) ->
-            System.out.printf("  %s: %d 辆车%n",
-                formatTime(minute), count));
-
-        System.out.println("\n小时级聚合数据:");
-        hourlyData.forEach((hour, count) ->
-            System.out.printf("  %s: %d 辆车%n",
-                formatTime(hour), count));
     }
 
     /**

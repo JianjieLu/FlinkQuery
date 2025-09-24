@@ -4,9 +4,8 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.JSONWriter;
-import com.ljj.flinkquery.demos.entity.CrowdedInfo;
-import com.ljj.flinkquery.demos.entity.TrafficEventUtils;
-import com.ljj.flinkquery.demos.entity.VehicleSeg;
+import com.ljj.flinkquery.FlinkQueryApplication;
+import com.ljj.flinkquery.demos.entity.*;
 import com.ljj.flinkquery.demos.entity.newFive.firstResult;
 import lombok.*;
 import org.apache.hadoop.conf.Configuration;
@@ -53,124 +52,126 @@ public class totalOps {
         return conf;
     }
 
-// 定义轨迹数据结构
-@AllArgsConstructor
-@NoArgsConstructor
-public static class TrajData {
-    private String rowKey;
-    private int vehicleType;
-    private long latestTime;
-    private List<TrajectoryPoint> trajectory;
-}
+    // 定义轨迹数据结构
+    @AllArgsConstructor
+    @NoArgsConstructor
+    public static class TrajData {
+        private String rowKey;
+        private int vehicleType;
+        private long latestTime;
+        private List<TrajectoryPoint> trajectory;
+    }
 
-public static List<VehicleData> getVehicleDataInTimeRange(
-        long startTime,
-        long endTime,
-        List<String> qualifiers
-) throws IOException {
-    List<VehicleData> result = new ArrayList<>();
-    Configuration conf = getHBaseConfiguration();
+    public static List<VehicleData> getVehicleDataInTimeRange(
+            long startTime,
+            long endTime,
+            List<String> qualifiers
+    ) throws IOException {
+        List<VehicleData> result = new ArrayList<>();
+        Configuration conf = getHBaseConfiguration();
 
-    try (Connection connection = ConnectionFactory.createConnection(conf)) {
-        // 1. 生成需要查询的表名列表（按日期分表）
-        LocalDate startDate = millisToLocalDate(startTime);
-        LocalDate endDate = millisToLocalDate(endTime);
-        Set<String> tableNames = new HashSet<>();
+        try (Connection connection = ConnectionFactory.createConnection(conf)) {
+            // 1. 生成需要查询的表名列表（按日期分表）
+            LocalDate startDate = millisToLocalDate(startTime);
+            LocalDate endDate = millisToLocalDate(endTime);
+            Set<String> tableNames = new HashSet<>();
 
-        for (LocalDate date = startDate; !date.isAfter(endDate); date = date.plusDays(1)) {
-            tableNames.add("ZCarTraj_" + date.format(DateTimeFormatter.BASIC_ISO_DATE));
-        }
-
-        // 2. 遍历所有表
-        for (String tableName : tableNames) {
-            if (!tableExists(connection, tableName)) {
-                System.out.println("表不存在，跳过: " + tableName);
-                continue;
+            for (LocalDate date = startDate; !date.isAfter(endDate); date = date.plusDays(1)) {
+                tableNames.add("ZCarTraj_" + date.format(DateTimeFormatter.BASIC_ISO_DATE));
             }
 
-            try (Table table = connection.getTable(TableName.valueOf(tableName));
-                 ResultScanner scanner = getScannerForTable(table, startTime, endTime, qualifiers)) {
+            // 2. 遍历所有表
+            for (String tableName : tableNames) {
+                if (!tableExists(connection, tableName)) {
+                    System.out.println("表不存在，跳过: " + tableName);
+                    continue;
+                }
 
-                // 3. 处理扫描结果
-                Map<String, VehicleData> vehicleMap = new HashMap<>();
+                try (Table table = connection.getTable(TableName.valueOf(tableName));
+                     ResultScanner scanner = getScannerForTable(table, startTime, endTime, qualifiers)) {
 
-                for (Result res : scanner) {
-                    String rowKey = Bytes.toString(res.getRow());
-                    RowKeyInfo rowKeyInfo = parseRowKey(rowKey);
+                    // 3. 处理扫描结果
+                    Map<String, VehicleData> vehicleMap = new HashMap<>();
 
-                    // 4. 过滤时间范围（行键级别）
-                    if (!isRowKeyInRange(rowKey, startTime, endTime)) {
-                        continue;
-                    }
+                    for (Result res : scanner) {
+                        String rowKey = Bytes.toString(res.getRow());
+                        RowKeyInfo rowKeyInfo = parseRowKey(rowKey);
 
-                    // 5. 创建或获取车辆数据对象
-                    VehicleData vehicleData = vehicleMap.computeIfAbsent(
-                        rowKey,
-                        k -> new VehicleData()
-                    );
-
-                    vehicleData.setRowKeyInfo(rowKeyInfo);
-
-                    // 6. 处理所有单元格
-                    for (Cell cell : res.listCells()) {
-                        String family = Bytes.toString(CellUtil.cloneFamily(cell));
-                        String qualifier = Bytes.toString(CellUtil.cloneQualifier(cell));
-
-                        // 只处理指定列（如果指定了列）
-                        if (qualifiers != null && !qualifiers.isEmpty() && !qualifiers.contains(qualifier)) {
+                        // 4. 过滤时间范围（行键级别）
+                        if (!isRowKeyInRange(rowKey, startTime, endTime)) {
                             continue;
                         }
 
-                        String value = Bytes.toString(CellUtil.cloneValue(cell));
+                        // 5. 创建或获取车辆数据对象
+                        VehicleData vehicleData = vehicleMap.computeIfAbsent(
+                                rowKey,
+                                k -> new VehicleData()
+                        );
 
-                        if ("cf0".equals(family)) {
-                            switch (qualifier) {
-                                case "type":
-                                    vehicleData.setType(Integer.parseInt(value));
-                                    break;
-                                case "latest_time":
-                                    vehicleData.setLatestTime(Long.parseLong(value));
-                                    break;
-                                case "trajectory":
-                                    List<TrajectoryPoint> points = parseTrajectory(value);
-                                    vehicleData.setTrajectory(points);
-                                    break;
-                                case "direction":
-                                    vehicleData.setDirection(Integer.parseInt(value));
-                                    break;
+                        vehicleData.setRowKeyInfo(rowKeyInfo);
 
+                        // 6. 处理所有单元格
+                        for (Cell cell : res.listCells()) {
+                            String family = Bytes.toString(CellUtil.cloneFamily(cell));
+                            String qualifier = Bytes.toString(CellUtil.cloneQualifier(cell));
+
+                            // 只处理指定列（如果指定了列）
+                            if (qualifiers != null && !qualifiers.isEmpty() && !qualifiers.contains(qualifier)) {
+                                continue;
+                            }
+
+                            String value = Bytes.toString(CellUtil.cloneValue(cell));
+
+                            if ("cf0".equals(family)) {
+                                switch (qualifier) {
+                                    case "type":
+                                        vehicleData.setType(Integer.parseInt(value));
+                                        break;
+                                    case "latest_time":
+                                        vehicleData.setLatestTime(Long.parseLong(value));
+                                        break;
+                                    case "trajectory":
+                                        List<TrajectoryPoint> points = parseTrajectory(value);
+                                        vehicleData.setTrajectory(points);
+                                        break;
+                                    case "direction":
+                                        vehicleData.setDirection(Integer.parseInt(value));
+                                        break;
+
+                                }
                             }
                         }
                     }
-                }
 
-                result.addAll(vehicleMap.values());
+                    result.addAll(vehicleMap.values());
+                }
             }
         }
+        return result;
     }
-    return result;
-}
-private static ResultScanner getScannerForTable(Table table, long startTime, long endTime, List<String> qualifiers) throws IOException {
-    // 创建Scan对象并设置时间范围
-    Scan scan = new Scan()
-            .withStartRow(Bytes.toBytes(startTime + "-"))
-            .withStopRow(Bytes.toBytes((endTime + 1) + "-"));
 
-    // 添加要查询的列
-    if (qualifiers != null && !qualifiers.isEmpty()) {
-        for (String qualifier : qualifiers) {
-            scan.addColumn(Bytes.toBytes("cf0"), Bytes.toBytes(qualifier));
+    private static ResultScanner getScannerForTable(Table table, long startTime, long endTime, List<String> qualifiers) throws IOException {
+        // 创建Scan对象并设置时间范围
+        Scan scan = new Scan()
+                .withStartRow(Bytes.toBytes(startTime + "-"))
+                .withStopRow(Bytes.toBytes((endTime + 1) + "-"));
+
+        // 添加要查询的列
+        if (qualifiers != null && !qualifiers.isEmpty()) {
+            for (String qualifier : qualifiers) {
+                scan.addColumn(Bytes.toBytes("cf0"), Bytes.toBytes(qualifier));
+            }
+        } else {
+            scan.addFamily(Bytes.toBytes("cf0"));
         }
-    } else {
-        scan.addFamily(Bytes.toBytes("cf0"));
+
+        return table.getScanner(scan);
     }
 
-    return table.getScanner(scan);
-}
-public static List<totalOps.VehicleData> getAllVehicleData(
-        String tableName,
-        List<String> qualifiers
-) throws IOException {
+    public static List<totalOps.VehicleData> getAllVehicleData(
+            String tableName,
+            List<String> qualifiers
+    ) throws IOException {
         Configuration conf = getHBaseConfiguration();
         List<totalOps.VehicleData> result = new ArrayList<>();
 
@@ -194,8 +195,8 @@ public static List<totalOps.VehicleData> getAllVehicleData(
                     totalOps.RowKeyInfo rowKeyInfo = parseRowKey(rowKey);
 
                     totalOps.VehicleData vehicleData = vehicleMap.computeIfAbsent(
-                        rowKey,
-                        k -> new totalOps.VehicleData()
+                            rowKey,
+                            k -> new totalOps.VehicleData()
                     );
 
                     vehicleData.setRowKeyInfo(rowKeyInfo);
@@ -230,116 +231,120 @@ public static List<totalOps.VehicleData> getAllVehicleData(
         }
         return result;
     }
-public static List<TrajData> getTrajInTimeRange(long startTime, long endTime) throws IOException {
-    List<TrajData> resultList = new ArrayList<>();
-    Configuration conf = getHBaseConfiguration();
 
-    try (Connection connection = ConnectionFactory.createConnection(conf)) {
-        LocalDate startDate = millisToLocalDate(startTime);
-        LocalDate endDate = millisToLocalDate(endTime);
+    public static List<TrajData> getTrajInTimeRange(long startTime, long endTime) throws IOException {
+        List<TrajData> resultList = new ArrayList<>();
+        Configuration conf = getHBaseConfiguration();
 
-        // 生成需要查询的表名列表
-        Set<String> tableNames = new HashSet<>();
-        for (LocalDate date = startDate; !date.isAfter(endDate); date = date.plusDays(1)) {
-            tableNames.add("ZCarTraj_" + date.format(DateTimeFormatter.BASIC_ISO_DATE));
-        }
-        System.out.println("tableNames:" + tableNames);
-        for (String tableName : tableNames) {
-            if (!tableExists(connection, tableName)) {
-                System.out.println("表不存在: " + tableName);
-                continue;
+        try (Connection connection = ConnectionFactory.createConnection(conf)) {
+            LocalDate startDate = millisToLocalDate(startTime);
+            LocalDate endDate = millisToLocalDate(endTime);
+
+            // 生成需要查询的表名列表
+            Set<String> tableNames = new HashSet<>();
+            for (LocalDate date = startDate; !date.isAfter(endDate); date = date.plusDays(1)) {
+                tableNames.add("ZCarTraj_" + date.format(DateTimeFormatter.BASIC_ISO_DATE));
             }
+            System.out.println("tableNames:" + tableNames);
+            for (String tableName : tableNames) {
+                if (!tableExists(connection, tableName)) {
+                    System.out.println("表不存在: " + tableName);
+                    continue;
+                }
 
-            try (Table table = connection.getTable(TableName.valueOf(tableName))) {
-                Scan scan = new Scan() .withStartRow(Bytes.toBytes(startTime + "-"))
-    .withStopRow(Bytes.toBytes((endTime + 1) + "-"));
+                try (Table table = connection.getTable(TableName.valueOf(tableName))) {
+                    Scan scan = new Scan().withStartRow(Bytes.toBytes(startTime + "-"))
+                            .withStopRow(Bytes.toBytes((endTime + 1) + "-"));
 
-                try (ResultScanner scanner = table.getScanner(scan)) {
-                    for (Result result : scanner) {
-                        // 处理每行结果
-                        String rowKey = Bytes.toString(result.getRow());
-                        if (!isRowKeyInRange(rowKey, startTime, endTime)) continue;
+                    try (ResultScanner scanner = table.getScanner(scan)) {
+                        for (Result result : scanner) {
+                            // 处理每行结果
+                            String rowKey = Bytes.toString(result.getRow());
+                            if (!isRowKeyInRange(rowKey, startTime, endTime)) continue;
 
-                        // 解析数据类型
-                        int vehicleType = getIntValue(result, "cf0", "type");
+                            // 解析数据类型
+                            int vehicleType = getIntValue(result, "cf0", "type");
 
-                        // 解析最新时间
-                        long latestTime = getLongValue(result, "cf0", "latest_time");
+                            // 解析最新时间
+                            long latestTime = getLongValue(result, "cf0", "latest_time");
 
-                        // 解析轨迹数据
-                        List<TrajectoryPoint> trajectoryPoints = parseTrajectory(
-                            getStringValue(result, "cf0", "trajectory")
-                        );
+                            // 解析轨迹数据
+                            List<TrajectoryPoint> trajectoryPoints = parseTrajectory(
+                                    getStringValue(result, "cf0", "trajectory")
+                            );
 
-                        // 添加到结果集
-                        resultList.add(new TrajData(rowKey, vehicleType, latestTime, trajectoryPoints));
+                            // 添加到结果集
+                            resultList.add(new TrajData(rowKey, vehicleType, latestTime, trajectoryPoints));
+                        }
                     }
                 }
             }
         }
+        return resultList;
     }
-    return resultList;
-}
 
-// 检查行键中的时间戳是否在查询范围内
-private static boolean isRowKeyInRange(String rowKey, long startTime, long endTime) {
-    String[] parts = rowKey.split("-");
-    if (parts.length > 0) {
-        try {
-            long rowKeyTime = Long.parseLong(parts[0]);
-            return rowKeyTime >= startTime && rowKeyTime <= endTime;
-        } catch (NumberFormatException e) {
-            return false;
+    // 检查行键中的时间戳是否在查询范围内
+    private static boolean isRowKeyInRange(String rowKey, long startTime, long endTime) {
+        String[] parts = rowKey.split("-");
+        if (parts.length > 0) {
+            try {
+                long rowKeyTime = Long.parseLong(parts[0]);
+                return rowKeyTime >= startTime && rowKeyTime <= endTime;
+            } catch (NumberFormatException e) {
+                return false;
+            }
         }
+        return false;
     }
-    return false;
-}
 
 // 解析轨迹字符串 ([x1,y1,lane1,dir1,speed1], [x2,y2,lane2,dir2,speed2])
 
 
-// 辅助方法 - 获取单元格的整数值
-private static int getIntValue(Result result, String cf, String qualifier) {
-    byte[] value = result.getValue(Bytes.toBytes(cf), Bytes.toBytes(qualifier));
-    if (value != null) {
-        try {
-            return Integer.parseInt(Bytes.toString(value));
-        } catch (NumberFormatException e) {
-            return -1; // 无效值标记
+    // 辅助方法 - 获取单元格的整数值
+    private static int getIntValue(Result result, String cf, String qualifier) {
+        byte[] value = result.getValue(Bytes.toBytes(cf), Bytes.toBytes(qualifier));
+        if (value != null) {
+            try {
+                return Integer.parseInt(Bytes.toString(value));
+            } catch (NumberFormatException e) {
+                return -1; // 无效值标记
+            }
         }
+        return -1;
     }
-    return -1;
-}
 
-// 辅助方法 - 获取单元格的长整数值
-private static long getLongValue(Result result, String cf, String qualifier) {
-    byte[] value = result.getValue(Bytes.toBytes(cf), Bytes.toBytes(qualifier));
-    if (value != null) {
-        try {
-            return Long.parseLong(Bytes.toString(value));
-        } catch (NumberFormatException e) {
-            return -1; // 无效值标记
+    // 辅助方法 - 获取单元格的长整数值
+    private static long getLongValue(Result result, String cf, String qualifier) {
+        byte[] value = result.getValue(Bytes.toBytes(cf), Bytes.toBytes(qualifier));
+        if (value != null) {
+            try {
+                return Long.parseLong(Bytes.toString(value));
+            } catch (NumberFormatException e) {
+                return -1; // 无效值标记
+            }
         }
+        return -1;
     }
-    return -1;
-}
 
-// 辅助方法 - 获取单元格的字符串值
-private static String getStringValue(Result result, String cf, String qualifier) {
-    byte[] value = result.getValue(Bytes.toBytes(cf), Bytes.toBytes(qualifier));
-    return (value != null) ? Bytes.toString(value) : "";
-}
+    // 辅助方法 - 获取单元格的字符串值
+    private static String getStringValue(Result result, String cf, String qualifier) {
+        byte[] value = result.getValue(Bytes.toBytes(cf), Bytes.toBytes(qualifier));
+        return (value != null) ? Bytes.toString(value) : "";
+    }
+
     public static boolean tableExists(Connection connection, String tableName) throws IOException {
         try (Admin admin = connection.getAdmin()) {
             return admin.tableExists(TableName.valueOf(tableName));
         }
     }
-private static float getFloatValue(Result result, String cf, String qualifier) {
-    byte[] bytes = result.getValue(Bytes.toBytes(cf), Bytes.toBytes(qualifier));
-    return (bytes != null && bytes.length == 4) ? 
-           Bytes.toFloat(bytes) : 
-           0.0f;  // 默认值
-}
+
+    private static float getFloatValue(Result result, String cf, String qualifier) {
+        byte[] bytes = result.getValue(Bytes.toBytes(cf), Bytes.toBytes(qualifier));
+        return (bytes != null && bytes.length == 4) ?
+                Bytes.toFloat(bytes) :
+                0.0f;  // 默认值
+    }
+
     private static LocalDate millisToLocalDate(long millis) {
         return Instant.ofEpochMilli(millis)
                 .atZone(ZoneId.systemDefault())
@@ -441,7 +446,6 @@ private static float getFloatValue(Result result, String cf, String qualifier) {
     }
 
 
-
     private static RowKeyInfo parseRowKey(String rowKey) {
         // 格式: "时间戳-\xE6\xB9\x98B6P538"
         String[] parts = rowKey.split("-", 2);
@@ -457,6 +461,7 @@ private static float getFloatValue(Result result, String cf, String qualifier) {
         }
         return new RowKeyInfo(0L, "未知");
     }
+
     public static boolean deleteTable(String tableName) throws IOException {
 
         Configuration config = HBaseConfiguration.create();
@@ -483,8 +488,8 @@ private static float getFloatValue(Result result, String cf, String qualifier) {
         }
     }
 
-        public static Pair<Integer,Integer> getTodayTotalDataBase(long timeMillis) throws IOException {
-        long st=System.currentTimeMillis();
+    public static Pair<Integer, Integer> getTodayTotalDataBase(long timeMillis) throws IOException {
+        long st = System.currentTimeMillis();
 //        // 1. 确定日期范围
 //        LocalDate targetDate = Instant.ofEpochMilli(timeMillis)
 //                                      .atZone(ZoneId.systemDefault())
@@ -546,9 +551,9 @@ private static float getFloatValue(Result result, String cf, String qualifier) {
 //        count+=result.get(dateStr).get(i);
 //
 //        }
-        long st1=System.currentTimeMillis();
+        long st1 = System.currentTimeMillis();
 
-        return new Pair<>(5737,(int)(st1-st));
+        return new Pair<>(5737, (int) (st1 - st));
     }
 
 
@@ -615,9 +620,7 @@ private static float getFloatValue(Result result, String cf, String qualifier) {
 //    }
 
 
-
-
-      private static final int SCANNER_CACHING = 10000; // 一次获取10000行
+    private static final int SCANNER_CACHING = 10000; // 一次获取10000行
     private static final int THREAD_POOL_SIZE = 2; // 处理两天的数据
 
 //public static Map<String, Map<Integer, Map<Integer, Integer>>> getHourlyTrafficForDayAndPreviousDay(long timeMillis)
@@ -687,185 +690,182 @@ private static float getFloatValue(Result result, String cf, String qualifier) {
 //}
 
     public static Map<String, Map<Integer, Map<Integer, Integer>>> getHourlyTrafficForDayAndPreviousDay(long timeMillis)
-        throws IOException {
-    long st = System.currentTimeMillis();
+            throws IOException {
+        long st = System.currentTimeMillis();
 
-    // 1. 确定日期范围
-    LocalDate targetDate = Instant.ofEpochMilli(timeMillis)
-            .atZone(ZoneId.systemDefault())
-            .toLocalDate();
-    LocalDate previousDay = targetDate.minusDays(1);
-    String targetDatePrefix = targetDate.format(DateTimeFormatter.BASIC_ISO_DATE); // yyyyMMdd
-    String previousDayPrefix = previousDay.format(DateTimeFormatter.BASIC_ISO_DATE); // yyyyMMdd
+        // 1. 确定日期范围
+        LocalDate targetDate = Instant.ofEpochMilli(timeMillis)
+                .atZone(ZoneId.systemDefault())
+                .toLocalDate();
+        LocalDate previousDay = targetDate.minusDays(1);
+        String targetDatePrefix = targetDate.format(DateTimeFormatter.BASIC_ISO_DATE); // yyyyMMdd
+        String previousDayPrefix = previousDay.format(DateTimeFormatter.BASIC_ISO_DATE); // yyyyMMdd
 
-    // 2. 初始化结果结构 (日期 -> 小时 -> 方向 -> 数量)
-    Map<String, Map<Integer, Map<Integer, Integer>>> result = new LinkedHashMap<>();
-    Map<Integer, Map<Integer, Integer>> targetDayMap = new HashMap<>();
-    Map<Integer, Map<Integer, Integer>> previousDayMap = new HashMap<>();
-    result.put(targetDatePrefix, targetDayMap);
-    result.put(previousDayPrefix, previousDayMap);
+        // 2. 初始化结果结构 (日期 -> 小时 -> 方向 -> 数量)
+        Map<String, Map<Integer, Map<Integer, Integer>>> result = new LinkedHashMap<>();
+        Map<Integer, Map<Integer, Integer>> targetDayMap = new HashMap<>();
+        Map<Integer, Map<Integer, Integer>> previousDayMap = new HashMap<>();
+        result.put(targetDatePrefix, targetDayMap);
+        result.put(previousDayPrefix, previousDayMap);
 
-    // 初始化所有小时桶 (0-23小时)
-    for (int hour = 0; hour < 24; hour++) {
-        targetDayMap.put(hour, new HashMap<Integer, Integer>() {{
-            put(1, 0); // 上行初始值
-            put(2, 0); // 下行初始值
-        }});
-        previousDayMap.put(hour, new HashMap<Integer, Integer>() {{
-            put(1, 0);
-            put(2, 0);
-        }});
-    }
-
-    // 3. 查询HBase
-    Configuration conf = getHBaseConfiguration();
-    try (Connection connection = ConnectionFactory.createConnection(conf);
-         Table table = connection.getTable(TableName.valueOf("traffic_stats"))) {
-
-        // 修复1：使用正确的列族名称 "stats"
-        Scan scan = new Scan();
-        scan.setStartRow(Bytes.toBytes(previousDayPrefix + "00")); // 起始：yyyyMMdd00
-        scan.setStopRow(Bytes.toBytes(targetDatePrefix + "24"));   // 结束：yyyyMMdd24 (不包含)
-        scan.addColumn(Bytes.toBytes("stats"), Bytes.toBytes("upcount"));   // 修复列族
-        scan.addColumn(Bytes.toBytes("stats"), Bytes.toBytes("downcount")); // 修复列族
-
-        try (ResultScanner scanner = table.getScanner(scan)) {
-            for (Result result1 : scanner) {
-                // 解析RowKey: yyyyMMddHH
-                String rowKey = Bytes.toString(result1.getRow());
-                // 修复2：正确提取8位日期
-                String dateStr = rowKey.substring(0, 8);  // 日期部分
-                int hour = Integer.parseInt(rowKey.substring(8, 10)); // 小时
-
-                // 获取流量值
-                int upCount = parseCount(result1, "upcount");
-                int downCount = parseCount(result1, "downcount");
-
-                // 填充结果集
-                Map<Integer, Map<Integer, Integer>> dayMap = result.get(dateStr);
-                if (dayMap != null) {
-                    Map<Integer, Integer> hourMap = dayMap.get(hour);
-                    if (hourMap != null) {
-                        hourMap.put(1, upCount);
-                        hourMap.put(2, downCount);
-                    }
-                }
-            }
-        }
-    }
-
-    // 4. 添加执行时间
-    long elapsed = System.currentTimeMillis() - st;
-    Map<Integer, Map<Integer, Integer>> timeMap = new HashMap<>();
-    timeMap.put(-1, Collections.singletonMap(-1, (int) elapsed));
-    result.put("__execution_time__", timeMap);
-
-    return result;
-}
-
-// 修复3：使用正确的列族解析数据
-private static int parseCount(Result result, String qualifier) {
-    Cell cell = result.getColumnLatestCell(
-        Bytes.toBytes("stats"), // 修复列族名称
-        Bytes.toBytes(qualifier)
-    );
-    return (cell != null) ?
-        Integer.parseInt(Bytes.toString(cell.getValueArray(), cell.getValueOffset(), cell.getValueLength())) :
-        0;
-}
-
-// 修改后的计数任务类
-private static class TrafficCounter implements Callable<Void> {
-    private final Connection connection;
-    private final LocalDate date;
-    private final Map<String, Map<Integer, Map<Integer, Integer>>> result;
-
-    public TrafficCounter(Connection connection, LocalDate date,
-                          Map<String, Map<Integer, Map<Integer, Integer>>> result) {
-        this.connection = connection;
-        this.date = date;
-        this.result = result;
-    }
-
-    @Override
-    public Void call() throws Exception {
-        String dateStr = date.format(DateTimeFormatter.BASIC_ISO_DATE);
-        String tableName = "ZCarTraj_" + dateStr;
-
-        // 初始化小时和方向计数数组 [小时][方向]
-        int[][] hourlyDirectionCounts = new int[24][3]; // 索引0不使用，1-2用于方向
-
-        // 跳过不存在的表
-        if (!tableExists(connection, tableName)) {
-            System.out.println("跳过不存在的表: " + tableName);
-            return null;
+        // 初始化所有小时桶 (0-23小时)
+        for (int hour = 0; hour < 24; hour++) {
+            targetDayMap.put(hour, new HashMap<Integer, Integer>() {{
+                put(1, 0); // 上行初始值
+                put(2, 0); // 下行初始值
+            }});
+            previousDayMap.put(hour, new HashMap<Integer, Integer>() {{
+                put(1, 0);
+                put(2, 0);
+            }});
         }
 
-        // 获取日期边界
-        long[] dateRange = getDateRange(date);
-        long startTime = dateRange[0];
-        long endTime = dateRange[1];
+        // 3. 查询HBase
+        Configuration conf = getHBaseConfiguration();
+        try (Connection connection = ConnectionFactory.createConnection(conf);
+             Table table = connection.getTable(TableName.valueOf("traffic_stats"))) {
 
-        try (Table table = connection.getTable(TableName.valueOf(tableName))) {
-            // 创建Scan对象
+            // 修复1：使用正确的列族名称 "stats"
             Scan scan = new Scan();
-            scan.setCaching(SCANNER_CACHING);
-            scan.setCacheBlocks(false);
-
-            // 设置行键范围
-            scan.setStartRow(Bytes.toBytes(startTime + "-"));
-            scan.setStopRow(Bytes.toBytes(endTime + "-"));
-
-            // 添加需要读取的列
-            scan.addColumn(Bytes.toBytes("cf0"), Bytes.toBytes("direction"));
+            scan.setStartRow(Bytes.toBytes(previousDayPrefix + "00")); // 起始：yyyyMMdd00
+            scan.setStopRow(Bytes.toBytes(targetDatePrefix + "24"));   // 结束：yyyyMMdd24 (不包含)
+            scan.addColumn(Bytes.toBytes("stats"), Bytes.toBytes("upcount"));   // 修复列族
+            scan.addColumn(Bytes.toBytes("stats"), Bytes.toBytes("downcount")); // 修复列族
 
             try (ResultScanner scanner = table.getScanner(scan)) {
-                for (Result res : scanner) {
-                    // 解析行键中的时间戳
-                    String rowKey = Bytes.toString(res.getRow());
-                    String[] parts = rowKey.split("-", 2);
-                    if (parts.length < 1) continue;
+                for (Result result1 : scanner) {
+                    // 解析RowKey: yyyyMMddHH
+                    String rowKey = Bytes.toString(result1.getRow());
+                    // 修复2：正确提取8位日期
+                    String dateStr = rowKey.substring(0, 8);  // 日期部分
+                    int hour = Integer.parseInt(rowKey.substring(8, 10)); // 小时
 
-                    try {
-                        long timestamp = Long.parseLong(parts[0]);
-                        ZonedDateTime zdt = Instant.ofEpochMilli(timestamp)
-                                .atZone(ZoneId.systemDefault());
-                        int hour = zdt.getHour();
+                    // 获取流量值
+                    int upCount = parseCount(result1, "upcount");
+                    int downCount = parseCount(result1, "downcount");
 
-                        // 获取方向值
-                        byte[] directionBytes = res.getValue(
-                            Bytes.toBytes("cf0"),
-                            Bytes.toBytes("direction")
-                        );
-
-                        if (directionBytes != null) {
-                            int direction = Integer.parseInt(Bytes.toString(directionBytes));
-
-                            // 只统计方向1和2
-                            if (direction == 1 || direction == 2) {
-                                hourlyDirectionCounts[hour][direction]++;
-                            }
+                    // 填充结果集
+                    Map<Integer, Map<Integer, Integer>> dayMap = result.get(dateStr);
+                    if (dayMap != null) {
+                        Map<Integer, Integer> hourMap = dayMap.get(hour);
+                        if (hourMap != null) {
+                            hourMap.put(1, upCount);
+                            hourMap.put(2, downCount);
                         }
-                    } catch (NumberFormatException e) {
-                        // 忽略格式错误
                     }
                 }
             }
-
-            // 批量更新结果
-            Map<Integer, Map<Integer, Integer>> resultMap = result.get(dateStr);
-            for (int hour = 0; hour < 24; hour++) {
-                Map<Integer, Integer> directionMap = resultMap.get(hour);
-                directionMap.put(1, hourlyDirectionCounts[hour][1]);
-                directionMap.put(2, hourlyDirectionCounts[hour][2]);
-            }
         }
-        return null;
+
+        // 4. 添加执行时间
+        long elapsed = System.currentTimeMillis() - st;
+        Map<Integer, Map<Integer, Integer>> timeMap = new HashMap<>();
+        timeMap.put(-1, Collections.singletonMap(-1, (int) elapsed));
+        result.put("__execution_time__", timeMap);
+
+        return result;
     }
-}
 
+    // 修复3：使用正确的列族解析数据
+    private static int parseCount(Result result, String qualifier) {
+        Cell cell = result.getColumnLatestCell(
+                Bytes.toBytes("stats"), // 修复列族名称
+                Bytes.toBytes(qualifier)
+        );
+        return (cell != null) ?
+                Integer.parseInt(Bytes.toString(cell.getValueArray(), cell.getValueOffset(), cell.getValueLength())) :
+                0;
+    }
 
+    // 修改后的计数任务类
+    private static class TrafficCounter implements Callable<Void> {
+        private final Connection connection;
+        private final LocalDate date;
+        private final Map<String, Map<Integer, Map<Integer, Integer>>> result;
 
+        public TrafficCounter(Connection connection, LocalDate date,
+                              Map<String, Map<Integer, Map<Integer, Integer>>> result) {
+            this.connection = connection;
+            this.date = date;
+            this.result = result;
+        }
+
+        @Override
+        public Void call() throws Exception {
+            String dateStr = date.format(DateTimeFormatter.BASIC_ISO_DATE);
+            String tableName = "ZCarTraj_" + dateStr;
+
+            // 初始化小时和方向计数数组 [小时][方向]
+            int[][] hourlyDirectionCounts = new int[24][3]; // 索引0不使用，1-2用于方向
+
+            // 跳过不存在的表
+            if (!tableExists(connection, tableName)) {
+                System.out.println("跳过不存在的表: " + tableName);
+                return null;
+            }
+
+            // 获取日期边界
+            long[] dateRange = getDateRange(date);
+            long startTime = dateRange[0];
+            long endTime = dateRange[1];
+
+            try (Table table = connection.getTable(TableName.valueOf(tableName))) {
+                // 创建Scan对象
+                Scan scan = new Scan();
+                scan.setCaching(SCANNER_CACHING);
+                scan.setCacheBlocks(false);
+
+                // 设置行键范围
+                scan.setStartRow(Bytes.toBytes(startTime + "-"));
+                scan.setStopRow(Bytes.toBytes(endTime + "-"));
+
+                // 添加需要读取的列
+                scan.addColumn(Bytes.toBytes("cf0"), Bytes.toBytes("direction"));
+
+                try (ResultScanner scanner = table.getScanner(scan)) {
+                    for (Result res : scanner) {
+                        // 解析行键中的时间戳
+                        String rowKey = Bytes.toString(res.getRow());
+                        String[] parts = rowKey.split("-", 2);
+                        if (parts.length < 1) continue;
+
+                        try {
+                            long timestamp = Long.parseLong(parts[0]);
+                            ZonedDateTime zdt = Instant.ofEpochMilli(timestamp)
+                                    .atZone(ZoneId.systemDefault());
+                            int hour = zdt.getHour();
+
+                            // 获取方向值
+                            byte[] directionBytes = res.getValue(
+                                    Bytes.toBytes("cf0"),
+                                    Bytes.toBytes("direction")
+                            );
+
+                            if (directionBytes != null) {
+                                int direction = Integer.parseInt(Bytes.toString(directionBytes));
+
+                                // 只统计方向1和2
+                                if (direction == 1 || direction == 2) {
+                                    hourlyDirectionCounts[hour][direction]++;
+                                }
+                            }
+                        } catch (NumberFormatException e) {
+                            // 忽略格式错误
+                        }
+                    }
+                }
+
+                // 批量更新结果
+                Map<Integer, Map<Integer, Integer>> resultMap = result.get(dateStr);
+                for (int hour = 0; hour < 24; hour++) {
+                    Map<Integer, Integer> directionMap = resultMap.get(hour);
+                    directionMap.put(1, hourlyDirectionCounts[hour][1]);
+                    directionMap.put(2, hourlyDirectionCounts[hour][2]);
+                }
+            }
+            return null;
+        }
+    }
 
 
 //    firstResult
@@ -876,24 +876,23 @@ private static class TrafficCounter implements Callable<Void> {
 //    firstResult
 
 
-
-
     public static long[] getDateRange(LocalDate date) {
         ZonedDateTime start = date.atStartOfDay(ZoneId.systemDefault());
         ZonedDateTime end = start.plusDays(1);
 
-        return new long[] {
-            start.toInstant().toEpochMilli(),
-            end.toInstant().toEpochMilli() - 1
+        return new long[]{
+                start.toInstant().toEpochMilli(),
+                end.toInstant().toEpochMilli() - 1
         };
     }
-   public static List<TrajectoryPoint> parseTrajectory(String trajectoryStr) {
+
+    public static List<TrajectoryPoint> parseTrajectory(String trajectoryStr) {
         List<TrajectoryPoint> result = new ArrayList<>();
 
         // 移除字符串首尾的方括号
         String cleaned = trajectoryStr.trim()
-            .replaceAll("^\\[", "")
-            .replaceAll("]$", "");
+                .replaceAll("^\\[", "")
+                .replaceAll("]$", "");
 
         // 按 "), (" 分割各个点
         String[] points = cleaned.split("\\),\\s*\\(");
@@ -916,6 +915,7 @@ private static class TrafficCounter implements Callable<Void> {
         }
         return result;
     }
+
     public static List<String> getRowKeysByQualifier(String tableName, String cf, String quali) throws IOException {
         Configuration conf = HBaseConfiguration.create();
         conf.set("hbase.zookeeper.quorum", "100.65.38.139,100.65.38.140,100.65.38.141,100.65.38.142,10.48.53.80");
@@ -947,76 +947,8 @@ private static class TrafficCounter implements Callable<Void> {
 
         return rowKeys;
     }
-   public static List<Integer> getVehicleCountByDirection(String tableName, List<String> rowkeys) throws IOException {
-    Configuration conf = HBaseConfiguration.create();
-    conf.set("hbase.zookeeper.quorum", "100.65.38.139,100.65.38.140,100.65.38.141,100.65.38.142,10.48.53.80");
-    conf.set("hbase.zookeeper.property.clientPort", "2181");
 
-    System.out.println("select table name " + tableName + " keys = " + rowkeys);
-    int upTotal = 0;
-    int busUp = 0;
-    int trackUp = 0;
 
-    try (Connection connection = ConnectionFactory.createConnection(conf)) {
-        // 1. 检查表是否存在
-        if (!isTableExists(connection, tableName)) {
-            return Arrays.asList(0, 0, 0, 0, 0, 0);
-        }
-
-        try (Table table = connection.getTable(TableName.valueOf(tableName))) {
-            // 2. 构建扫描器，一次性获取所有相关行
-            Scan scan = new Scan();
-            scan.addColumn(Bytes.toBytes("cf"), Bytes.toBytes("VehicleSegments"));
-
-            // 3. 设置扫描范围（所有rowkey及它们的后缀）
-            List<MultiRowRangeFilter.RowRange> ranges = new ArrayList<>();
-            for (String rowkey : rowkeys) {
-                // 主rowkey范围
-                ranges.add(new MultiRowRangeFilter.RowRange(
-                    Bytes.toBytes(rowkey), true,
-                    Bytes.toBytes(rowkey), true
-                ));
-            }
-
-            // 4. 使用MultiRowRangeFilter进行高效扫描
-            MultiRowRangeFilter filter = new MultiRowRangeFilter(ranges);
-            scan.setFilter(filter);
-
-            // 5. 执行扫描并处理结果
-            try (ResultScanner scanner = table.getScanner(scan)) {
-                for (Result result : scanner) {
-                    if (result.isEmpty()) continue;
-
-                    // 解析车辆数据
-                    byte[] valueBytes = result.getValue(
-                        Bytes.toBytes("cf"),
-                        Bytes.toBytes("VehicleSegments")
-                    );
-
-                    String jsonStr = Bytes.toString(valueBytes)
-                        .replace("\\x", "\\u00")
-                        .replace("\\", "\\\\");
-                    JSONArray vehicles = JSON.parseArray(jsonStr);
-
-                    // 6. 按方向分类统计
-                    for (Object obj : vehicles) {
-                        JSONObject vehicle = (JSONObject) obj;
-                        int vt = vehicle.getIntValue("originalType");
-                            upTotal++;
-                            if (vt == 1 || vt == 3 || vt == 7 || vt == 15) busUp++;
-                            else trackUp++;
-                    }
-                }
-            }
-        }
-    } catch (IOException e) {
-        e.printStackTrace();
-        return Arrays.asList(0, 0, 0, 0, 0, 0);
-    }
-       List<Integer> list = Arrays.asList(upTotal, busUp, trackUp);
-       System.out.println("tableName:"+tableName+"  rowkeys:"+rowkeys+"  result:(upTotal, downTotal, busUp, trackUp, busDown, trackDown): "+list);
-    return list;
-}
 
 
 public static firstResult getNearestMinuteCongestionStats(long timestamp) throws IOException {
@@ -1272,6 +1204,466 @@ public static firstResult getNearestMinuteCongestionStats(long timestamp) throws
         }
         return vehicleSegs;
     }
+
+public static List<hbaseVe.VehicleSegAccumulator> getVeByRowkeys(String tableName, List<String> rowkeys) {
+    List<hbaseVe.VehicleSegAccumulator> results = new ArrayList<>();
+    if (rowkeys == null || rowkeys.isEmpty()) {
+        return results;
+    }
+
+    Configuration conf = HBaseConfiguration.create();
+    conf.set("hbase.zookeeper.quorum", "100.65.38.139,100.65.38.140,100.65.38.141,100.65.38.142,10.48.53.80");
+    conf.set("hbase.zookeeper.property.clientPort", "2181");
+
+    try (Connection connection = ConnectionFactory.createConnection(conf)) {
+        if (!isTableExists(connection, tableName)) {
+            System.out.println("表 " + tableName + " 不存在");
+            return results;
+        }
+
+        try (Table table = connection.getTable(TableName.valueOf(tableName));
+             Admin admin = connection.getAdmin()) {
+
+            // 创建扫描器
+            Scan scan = new Scan();
+            scan.addColumn(Bytes.toBytes("cf"), Bytes.toBytes("VehicleSegments"));
+
+            // 设置缓存大小（优化性能）
+            scan.setCaching(1000);
+            scan.setBatch(100);
+
+            // 使用行键过滤器
+            List<MultiRowRangeFilter.RowRange> rowRanges = new ArrayList<>();
+            for (String rowkey : rowkeys) {
+                String[] parts = rowkey.split("_");
+                if (parts.length != 2) {
+                    System.err.println("无效的rowkey格式: " + rowkey);
+                    continue;
+                }
+
+                try {
+                    long timestamp = Long.parseLong(parts[0]);
+                    int stakeNum = Integer.parseInt(parts[1].replace("K", ""));
+
+                    // 创建二进制rowkey
+                    byte[] rowkeyBytes = Bytes.add(
+                        Bytes.toBytes(timestamp),
+                        Bytes.toBytes(stakeNum)
+                    );
+
+                    // 为每个rowkey创建范围（单个行）
+                    rowRanges.add(new MultiRowRangeFilter.RowRange(rowkeyBytes, true, rowkeyBytes, true));
+                } catch (NumberFormatException e) {
+                    System.err.println("解析rowkey失败: " + rowkey + " - " + e.getMessage());
+                }
+            }
+
+            // 使用MultiRowRangeFilter优化扫描
+            if (!rowRanges.isEmpty()) {
+                MultiRowRangeFilter filter = new MultiRowRangeFilter(rowRanges);
+                scan.setFilter(filter);
+            }
+
+            // 执行扫描
+            try (ResultScanner scanner = table.getScanner(scan)) {
+                for (Result result : scanner) {
+                    if (result.isEmpty()) {
+                        continue;
+                    }
+
+                    byte[] valueBytes = result.getValue(Bytes.toBytes("cf"), Bytes.toBytes("VehicleSegments"));
+                    if (valueBytes == null) {
+                        continue;
+                    }
+
+                    try {
+                        String jsonStr = Bytes.toString(valueBytes);
+                        hbaseVe.VehicleSegAccumulator accumulator = JSON.parseObject(jsonStr, hbaseVe.VehicleSegAccumulator.class);
+                        results.add(accumulator);
+                    } catch (Exception e) {
+                        System.err.println("解析数据失败: " + e.getMessage());
+                    }
+                }
+            }
+        }
+    } catch (IOException e) {
+        System.err.println("HBase操作异常: " + e.getMessage());
+    }
+    return results;
+}
+
+public static List<hbaseVe.VehicleSegAccumulator> filterScan(String tableName, Long startTime, Long endTime, Integer startStake, Integer endStake) throws IOException {
+    List<hbaseVe.VehicleSegAccumulator> results = new ArrayList<>();
+
+
+    Configuration conf = HBaseConfiguration.create();
+    conf.set("hbase.zookeeper.quorum", "100.65.38.139,100.65.38.140,100.65.38.141,100.65.38.142,10.48.53.80");
+    conf.set("hbase.zookeeper.property.clientPort", "2181");
+
+    try (Connection connection = ConnectionFactory.createConnection(conf)) {
+        Table table = connection.getTable(TableName.valueOf(tableName));
+
+        // 2. 创建Scan对象
+        Scan scan = new Scan();
+
+        long beforeQueriesTime = System.currentTimeMillis();
+
+        List<MultiRowRangeFilter.RowRange> ranges = new ArrayList<>();
+        Long startTimeStamp = startTime / 60000 * 60000;
+        Long endTimeStamp = endTime / 60000 * 60000;
+        for (Long i = startTimeStamp; i <= endTimeStamp; i += 60000) {
+            // 主rowkey范围
+            ranges.add(new MultiRowRangeFilter.RowRange(
+                    Bytes.add(Bytes.toBytes(i), Bytes.toBytes(startStake)), true,
+                    Bytes.add(Bytes.toBytes(i), Bytes.toBytes(endStake)), true
+            ));
+        }
+
+        // 4. 使用MultiRowRangeFilter进行高效扫描
+        MultiRowRangeFilter filter = new MultiRowRangeFilter(ranges);
+        scan.setFilter(filter);
+
+        try {
+            // 读取多行数据获得scanner
+            ResultScanner scanner = table.getScanner(scan);
+            long afterQueriesTime = System.currentTimeMillis();
+
+            // 重要：result来记录一行数据，本质是cell数据
+            // resultScanner记录多行数据，本质是result数组，即二维数组
+            int rowSum = 0;
+            for (Result result : scanner) {
+              if (result.isEmpty()) {
+                        continue;
+                    }
+
+                    byte[] valueBytes = result.getValue(Bytes.toBytes("cf"), Bytes.toBytes("VehicleSegments"));
+                    if (valueBytes == null) {
+                        continue;
+                    }
+
+                    try {
+                        String jsonStr = Bytes.toString(valueBytes);
+                        hbaseVe.VehicleSegAccumulator accumulator = JSON.parseObject(jsonStr, hbaseVe.VehicleSegAccumulator.class);
+                        results.add(accumulator);
+                    } catch (Exception e) {
+                        System.err.println("解析数据失败: " + e.getMessage());
+                    }
+            }
+            System.out.println("共获得行数：" + rowSum);
+            System.out.println("总计查询程序的时间：" + (System.currentTimeMillis() - beforeQueriesTime) + " ms");
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        // 3. 关闭table
+        table.close();
+    }
+    return results;
+}
+
+public static List<Integer> getVehicleCountByDirection(String tableName, Long startTime, Long endTime, Integer startStake, Integer endStake) throws IOException {
+        List<hbaseVe.VehicleSegAccumulator> results = new ArrayList<>();
+
+    int upTotal = 0;
+    int busUp = 0;
+    int trackUp = 0;
+       int downTotal = 0;
+    int busDown = 0;
+    int trackDown = 0;
+        Configuration conf = HBaseConfiguration.create();
+        conf.set("hbase.zookeeper.quorum", "100.65.38.139,100.65.38.140,100.65.38.141,100.65.38.142,10.48.53.80");
+        conf.set("hbase.zookeeper.property.clientPort", "2181");
+
+        try (Connection connection = ConnectionFactory.createConnection(conf)) {
+            Table table = connection.getTable(TableName.valueOf(tableName));
+
+            // 2. 创建Scan对象
+            Scan scan = new Scan();
+
+            long beforeQueriesTime = System.currentTimeMillis();
+
+            List<MultiRowRangeFilter.RowRange> ranges = new ArrayList<>();
+            Long startTimeStamp = startTime / 60000 * 60000;
+            Long endTimeStamp = endTime / 60000 * 60000;
+            for (Long i = startTimeStamp; i <= endTimeStamp; i += 60000) {
+                // 主rowkey范围
+                ranges.add(new MultiRowRangeFilter.RowRange(
+                        Bytes.add(Bytes.toBytes(i), Bytes.toBytes(startStake)), true,
+                        Bytes.add(Bytes.toBytes(i), Bytes.toBytes(endStake)), true
+                ));
+            }
+
+            // 4. 使用MultiRowRangeFilter进行高效扫描
+            MultiRowRangeFilter filter = new MultiRowRangeFilter(ranges);
+            scan.setFilter(filter);
+
+            try {
+              try (ResultScanner scanner = table.getScanner(scan)) {
+            for (Result result : scanner) {
+                if (result.isEmpty()) continue;
+
+                // 解析车辆数据
+                byte[] valueBytes = result.getValue(
+                    Bytes.toBytes("cf"),
+                    Bytes.toBytes("VehicleSegments")
+                );
+
+                if (valueBytes == null) continue;
+
+                try {
+                    String jsonStr = Bytes.toString(valueBytes);
+                    JSONObject data = JSON.parseObject(jsonStr);
+
+                    // 解析方向信息
+                    JSONObject vehicleMapD1 = data.getJSONObject("vehicleSegMapD1");
+                    JSONObject vehicleMapD2 = data.getJSONObject("vehicleSegMapD2");
+
+                    // 处理方向1的车辆
+                    if (vehicleMapD1 != null) {
+                        for (String carId : vehicleMapD1.keySet()) {
+                            JSONObject vehicle = vehicleMapD1.getJSONObject(carId);
+                            int vt = vehicle.getIntValue("originalType");
+
+                            upTotal++;
+                            if (vt == 1 || vt == 3 || vt == 7 || vt == 15) busUp++;
+                            else trackUp++;
+                        }
+                    }
+
+                    // 处理方向2的车辆
+                    if (vehicleMapD2 != null) {
+                        for (String carId : vehicleMapD2.keySet()) {
+                            JSONObject vehicle = vehicleMapD2.getJSONObject(carId);
+                            int vt = vehicle.getIntValue("originalType");
+
+                            downTotal++;
+                            if (vt == 1 || vt == 3 || vt == 7 || vt == 15) busDown++;
+                            else trackDown++;
+                        }
+                    }
+                } catch (Exception e) {
+                    System.err.println("解析数据失败: " + e.getMessage());
+                }
+            }
+        }
+            } catch (IOException e) {
+                 e.printStackTrace();
+        return Arrays.asList(0, 0, 0, 0, 0, 0);
+            }
+        }
+
+    List<Integer> list = Arrays.asList(upTotal, busUp, trackUp,downTotal, busDown, trackDown);
+       System.out.println("tableName:"+tableName+"  result:(upTotal, busUp, trackUp,downTotal, busDown, trackDown): "+list);
+    return list;
+}
+
+public static List<Integer> se(String tableName, Long startTime, Long endTime, Integer startStake, Integer endStake) throws IOException {
+    // 初始化结果
+    int upTotal = 0;
+    int downTotal = 0;
+
+    Configuration conf = HBaseConfiguration.create();
+    conf.set("hbase.zookeeper.quorum", "100.65.38.139,100.65.38.140,100.65.38.141,100.65.38.142,10.48.53.80");
+    conf.set("hbase.zookeeper.property.clientPort", "2181");
+
+    try (Connection connection = ConnectionFactory.createConnection(conf)) {
+        Table table = connection.getTable(TableName.valueOf(tableName));
+
+        // 创建Scan对象
+        Scan scan = new Scan();
+
+        // 计算时间范围（分钟级）
+        long startTimeStamp = startTime / 60000 * 60000;
+        long endTimeStamp = endTime / 60000 * 60000;
+
+        // 创建行键范围
+        List<MultiRowRangeFilter.RowRange> ranges = new ArrayList<>();
+        for (long i = startTimeStamp; i <= endTimeStamp; i += 60000) {
+            // 构建一个时间戳内桩号从startStake到endStake的范围
+            byte[] startRow = Bytes.add(Bytes.toBytes(i), Bytes.toBytes(startStake));
+            byte[] endRow = Bytes.add(Bytes.toBytes(i), Bytes.toBytes(endStake));
+            ranges.add(new MultiRowRangeFilter.RowRange(startRow, true, endRow, true));
+        }
+
+        // 使用MultiRowRangeFilter进行高效扫描
+        MultiRowRangeFilter filter = new MultiRowRangeFilter(ranges);
+        scan.setFilter(filter);
+
+        try (ResultScanner scanner = table.getScanner(scan)) {
+            for (Result result : scanner) {
+                if (result.isEmpty()) continue;
+
+                // 解析车辆数据
+                byte[] valueBytes = result.getValue(
+                    Bytes.toBytes("cf"),
+                    Bytes.toBytes("VehicleSegments")
+                );
+
+                if (valueBytes == null) continue;
+
+                try {
+                    String jsonStr = Bytes.toString(valueBytes);
+                    JSONObject data = JSON.parseObject(jsonStr);
+
+                    // 解析方向信息
+                    JSONObject vehicleMapD1 = data.getJSONObject("vehicleSegMapD1");
+                    JSONObject vehicleMapD2 = data.getJSONObject("vehicleSegMapD2");
+
+                    // 处理方向1的车辆
+                    if (vehicleMapD1 != null) {
+                        upTotal += vehicleMapD1.size();
+                    }
+
+                    // 处理方向2的车辆
+                    if (vehicleMapD2 != null) {
+                        downTotal += vehicleMapD2.size();
+                    }
+                } catch (Exception e) {
+                    System.err.println("解析数据失败: " + e.getMessage());
+                }
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+            return Arrays.asList(0, 0);
+        }
+    } catch (IOException e) {
+        e.printStackTrace();
+        return Arrays.asList(0, 0);
+    }
+
+    List<Integer> list = Arrays.asList(upTotal, downTotal);
+    System.out.println("tableName:" + tableName + "  result:(upTotal, downTotal): " + list);
+    return list;
+}
+   public static List<Integer> getVehicleCountByDirection(String tableName, List<String> rowkeys) throws IOException {
+    Configuration conf = HBaseConfiguration.create();
+    conf.set("hbase.zookeeper.quorum", "100.65.38.139,100.65.38.140,100.65.38.141,100.65.38.142,10.48.53.80");
+    conf.set("hbase.zookeeper.property.clientPort", "2181");
+    System.out.println("select table name " + tableName + " keys = " + rowkeys);
+    int upTotal = 0;
+    int busUp = 0;
+    int trackUp = 0;
+
+    try (Connection connection = ConnectionFactory.createConnection(conf)) {
+        // 1. 检查表是否存在
+        if (!isTableExists(connection, tableName)) {
+            return Arrays.asList(0, 0, 0, 0, 0, 0);
+        }
+
+        try (Table table = connection.getTable(TableName.valueOf(tableName))) {
+            // 2. 构建扫描器，一次性获取所有相关行
+            Scan scan = new Scan();
+            scan.setCaching(1000);
+            scan.addColumn(Bytes.toBytes("cf"), Bytes.toBytes("VehicleSegments"));
+
+            // 3. 设置扫描范围（所有rowkey及它们的后缀）
+            List<MultiRowRangeFilter.RowRange> ranges = new ArrayList<>();
+            for (String rowkey : rowkeys) {
+                // 主rowkey范围
+                ranges.add(new MultiRowRangeFilter.RowRange(
+                    Bytes.toBytes(rowkey), true,
+                    Bytes.toBytes(rowkey), true
+
+                ));
+            }
+
+            // 4. 使用MultiRowRangeFilter进行高效扫描
+            MultiRowRangeFilter filter = new MultiRowRangeFilter(ranges);
+            scan.setFilter(filter);
+
+
+            // 5. 执行扫描并处理结果
+            try (ResultScanner scanner = table.getScanner(scan)) {
+                for (Result result : scanner) {
+                    if (result.isEmpty()) continue;
+
+                    // 解析车辆数据
+                    byte[] valueBytes = result.getValue(
+                        Bytes.toBytes("cf"),
+                        Bytes.toBytes("VehicleSegments")
+                    );
+
+                    String jsonStr = Bytes.toString(valueBytes);
+                    JSONArray vehicles = JSON.parseArray(jsonStr);
+
+                    // 6. 按方向分类统计
+                    for (Object obj : vehicles) {
+                        JSONObject vehicle = (JSONObject) obj;
+                        int vt = vehicle.getIntValue("originalType");
+                            upTotal++;
+                            if (vt == 1 || vt == 3 || vt == 7 || vt == 15) busUp++;
+                            else trackUp++;
+                    }
+                }
+            }
+        }
+    } catch (IOException e) {
+        e.printStackTrace();
+        return Arrays.asList(0, 0, 0, 0, 0, 0);
+    }
+       List<Integer> list = Arrays.asList(upTotal, busUp, trackUp);
+       System.out.println("tableName:"+tableName+"  rowkeys:"+rowkeys+"  result:(upTotal, downTotal, busUp, trackUp, busDown, trackDown): "+list);
+    return list;
+}
+
+
+//      public static void filterScan(String tableName, Long startTime, Long endTime, Integer startStake, Integer endStake) throws IOException {
+//          List<VehicleSeg> vehicleSegs = new ArrayList<>();
+//          Configuration conf = HBaseConfiguration.create();
+//          conf.set("hbase.zookeeper.quorum", "100.65.38.139,100.65.38.140,100.65.38.141,100.65.38.142,10.48.53.80");
+//          conf.set("hbase.zookeeper.property.clientPort", "2181");
+//
+//          try (Connection connection = ConnectionFactory.createConnection(conf)) {
+//              Table table = connection.getTable(TableName.valueOf(tableName));
+//
+//              // 2. 创建Scan对象
+//              Scan scan = new Scan();
+//
+//              long beforeQueriesTime = System.currentTimeMillis();
+//
+//              List<MultiRowRangeFilter.RowRange> ranges = new ArrayList<>();
+//              Long startTimeStamp = startTime / 60000 * 60000;
+//              Long endTimeStamp = endTime / 60000 * 60000;
+//              for (long i = startTimeStamp; i <= endTimeStamp; i += 60000) {
+//                  // 主rowkey范围
+//                  ranges.add(new MultiRowRangeFilter.RowRange(
+//                          Bytes.add(Bytes.toBytes(i), Bytes.toBytes(startStake)), true,
+//                          Bytes.add(Bytes.toBytes(i), Bytes.toBytes(endStake)), true
+//                  ));
+//              }
+//
+//              // 4. 使用MultiRowRangeFilter进行高效扫描
+//              MultiRowRangeFilter filter = new MultiRowRangeFilter(ranges);
+//              scan.setFilter(filter);
+//
+//              try {
+//                  // 读取多行数据获得scanner
+//                  ResultScanner scanner = table.getScanner(scan);
+//                  long afterQueriesTime = System.currentTimeMillis();
+//
+//                  // 重要：result来记录一行数据，本质是cell数据
+//                  // resultScanner记录多行数据，本质是result数组，即二维数组
+//                  int rowSum = 0;
+//                  for (Result result : scanner) {
+//                      rowSum++;
+//                      JSON.toString(result);
+////                Cell[] cells = result.rawCells();
+////                for (Cell cell : cells) {
+////                    System.out.print(new String(CellUtil.cloneRow(cell)) + '-' + new String(CellUtil.cloneFamily(cell)) + '-'
+////                            + new String(CellUtil.cloneQualifier(cell)) + '-' + new String(CellUtil.cloneValue(cell)) + '\t'); // 先不要换行
+////                }
+////                System.out.println();
+//                  }
+//                  System.out.println("共获得行数：" + rowSum);
+//                  System.out.println("总计查询程序的时间：" + (System.currentTimeMillis() - beforeQueriesTime) + " ms");
+//              } catch (IOException e) {
+//                  e.printStackTrace();
+//              }
+//
+//              // 3. 关闭table
+//              table.close();
+//          }
+//      }
  public static List<VehicleSeg> getVeByRowkeys(String tableName, String rowkey,String rowkey1) {
         List<VehicleSeg> vehicleSegs = new ArrayList<>();
         Configuration conf = HBaseConfiguration.create();
@@ -1532,7 +1924,9 @@ public static firstResult getNearestMinuteCongestionStats(long timestamp) throws
     }
 
 
-
+    public static SectionalFlowPiece getSectionalFlowPiece(String startTime,String endTime,String startStake,String endStake ){
+return null;
+    }
     @Data
     @Getter
     @Setter

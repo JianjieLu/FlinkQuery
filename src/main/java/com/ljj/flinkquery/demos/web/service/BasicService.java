@@ -1,8 +1,11 @@
 package com.ljj.flinkquery.demos.web.service;
 
 import com.ljj.flinkquery.FlinkQueryApplication;
+import com.ljj.flinkquery.demos.entity.watch.carNumResult;
+import com.ljj.flinkquery.demos.entity.watch.flowNo;
 import com.ljj.flinkquery.demos.entity.watch.sectionLosResult;
 import com.ljj.flinkquery.demos.entity.watch.zaEachSitResult;
+import com.ljj.flinkquery.demos.web.impl.edu.tableOps.totalOpsv3;
 import org. json. JSONObject;
 import com.ljj.flinkquery.demos.entity.newFive.firstResult;
 import com.ljj.flinkquery.demos.entity.newFive.secondResult;
@@ -32,17 +35,18 @@ Map<String, Map<Integer, Map<Integer, Integer>>> getHourlyTrafficStatistics(long
 
 upDownResult getUpDownChargerByDuration(String stationId, String startTime, String endTime);
 totalResult getHolyTotal(Long timestamp) throws IOException, ExecutionException, InterruptedException;
-List<upDownResult> getBatchUpDownCharger(List<String> stationIds,String beginTime,String endTime);
+List<upDownResult> getBatchUpDownCharger(List<String> stationIds,String beginTime,String endTime,int level);
 
 
 sectionLosResult sectionLOS(String beginTime,String endTime ,String startStake,String endStake) throws IOException;
 sectionLosResult zaSectionLOS(String beginTime,String endTime ,String facilitiesId) throws IOException;
-List<zaEachSitResult> zaEachSit(List<String> stationIds,String beginTime,String endTime,int level) throws Exception;
+zaEachSitResult zaEachSit(List<String> stationIds,String beginTime,String endTime,int level) throws Exception;
 
 FlinkQueryApplication.trj getTrajectoryByPlateNo(String plateNo) throws IOException;
 Set<String> getAllPlateNumbers();
 double[] test1(Long timestamp) throws IOException;
 secondResult test2(Long timestamp);
 Map<String, Map<Integer, Map<Integer, Integer>>> test3(Long timestamp) throws IOException, InterruptedException, ClassNotFoundException, ExecutionException;
-
+carNumResult getCarNumber(String beginTime, String endTime, String startStake, String endStake, int level) throws IOException;
+flowNo getFlowNo(String startTime,String endTime,String startStake,String endStake) throws IOException;
 }

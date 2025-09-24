@@ -18,5 +18,5 @@ public class VehicleSeg {
     private Integer vehicleType;
     private String specialFlag;
     private int laneNo;
-    private double averageSpeed;
+    private float averageSpeed;
 }
