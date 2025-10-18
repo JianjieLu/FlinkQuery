@@ -31,6 +31,8 @@ import org.apache.hadoop.hbase.util.Bytes;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.data.redis.connection.RedisStandaloneConfiguration;
@@ -53,9 +55,13 @@ import static com.ljj.flinkquery.demos.entity.data.Utils.convertToTimestampMilli
 import static com.ljj.flinkquery.demos.entity.data.Utils.eventInfo;
 import static com.ljj.flinkquery.demos.web.impl.edu.tableOps.totalOps.getHBaseConfiguration;
 import static com.ljj.flinkquery.demos.web.impl.edu.tableOps.totalOps.getTodayTotalDataBase;
+import static com.ljj.flinkquery.demos.web.service.HBaseServiceImpl.cnum;
+//10.3  增加log，redis、todaytotal每天清空。log修改后已经重新打包好，还没上传。
 
 @SpringBootApplication
 public class FlinkQueryApplication {
+        private static final Logger logger = LoggerFactory.getLogger("whu.edu.moniData.CarTrajIngestMoniOfi");
+
         private static final Map<String, String> mapPlateNo = new ConcurrentHashMap<>(); // 新增：存储车牌号
 
 //    private static final Map<String, List<Tuple5<Double, Double, Integer, Integer, Double>>> map = new ConcurrentHashMap<>();
@@ -64,7 +70,9 @@ public class FlinkQueryApplication {
     private static final Map<String, Long> lastSeenTime = new ConcurrentHashMap<>();
     private static final Map<String, Long> lastSampleTime = new ConcurrentHashMap<>();
     private static final ReentrantLock stateLock = new ReentrantLock();
-
+ // 年度累计流量计数器（上行/下行）
+        private static final AtomicInteger upTotal = new AtomicInteger(0);
+        private static final AtomicInteger downTotal = new AtomicInteger(0);
     // 新增：存储车辆在计算范围内的时间二元组
     private static final Map<String, Map<String, TimePair>> vehicleTimePairs = new ConcurrentHashMap<>();
     // 新增：存储每个分组的时间二元组列表
@@ -77,40 +85,118 @@ public class FlinkQueryApplication {
     Map<String, Boolean> tempMap = new ConcurrentHashMap<>();
     static int upcount = 0;
     int downcount = 0;
-    public static final AtomicReference<Pair<Integer, Integer>> todayTotal =
-            new AtomicReference<>(new Pair<>(0, 0));//数量，处理毫秒数
+
+    public static final AtomicReference<Pair<Integer, Long>> todayTotal =
+            new AtomicReference<>(new Pair<>(0, 0L));//数量，处理毫秒数
 
     public static final AtomicReference<int[]> yearToDateTraffic =
             new AtomicReference<>(new int[]{0, 0});//上行车辆数，下行车辆数
+// 添加清理线程池
+    private static final ScheduledExecutorService cleaner = Executors.newScheduledThreadPool(1);
 
+    // 静态初始化块 - 在这里放置清理代码
+    static {
+        cleaner.scheduleAtFixedRate(() -> {
+            stateLock.lock();
+            try {
+                long now = System.currentTimeMillis();
+                logger.debug("开始清理过期数据，当前时间: {}", now);
+
+                // 清理30分钟未更新的车辆
+                int removedCount = 0;
+                Iterator<Map.Entry<String, Long>> iterator = lastSeenTime.entrySet().iterator();
+                while (iterator.hasNext()) {
+                    Map.Entry<String, Long> entry = iterator.next();
+                    if ((now - entry.getValue()) > 30 * 60 * 1000) {
+                        String vehicleId = entry.getKey();
+                        iterator.remove();
+                        mapPlateNo.remove(vehicleId);
+                        mapTimeSeg.remove(vehicleId);
+                        mapType.remove(vehicleId);
+                        lastSampleTime.remove(vehicleId);
+                        vehicleTimePairs.remove(vehicleId);
+                        removedCount++;
+                    }
+                }
+
+                // 清理groupedTimePairs中过期的分组
+                groupedTimePairs.entrySet().removeIf(entry ->
+                    entry.getValue().removeIf(pair ->
+                        (now - pair.lastTime) > 30 * 60 * 1000
+                    ) && entry.getValue().isEmpty()
+                );
+
+                logger.debug("清理完成，移除了 {} 个过期车辆", removedCount);
+                logger.debug("当前集合大小 - lastSeenTime: {}, mapPlateNo: {}, vehicleTimePairs: {}, groupedTimePairs: {}",
+                    lastSeenTime.size(), mapPlateNo.size(), vehicleTimePairs.size(), groupedTimePairs.size());
+
+            } catch (Exception e) {
+                logger.error("清理过程中发生异常", e);
+            } finally {
+                stateLock.unlock();
+            }
+        }, 10, 10, TimeUnit.MINUTES); // 延迟10分钟启动，然后每10分钟执行一次
+    }
+  // 添加关闭钩子，确保清理线程池被正确关闭
+    static {
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            logger.info("应用关闭，正在停止清理线程...");
+            cleaner.shutdown();
+            try {
+                if (!cleaner.awaitTermination(5, TimeUnit.SECONDS)) {
+                    cleaner.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                cleaner.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+            logger.info("清理线程已停止");
+        }));
+    }
     public static void main(String[] args) throws Exception {
+         logger.debug("测试日志输出"); // DEBUG级别日志
         SpringApplication.run(FlinkQueryApplication.class, args);
         VehicleCounter.scheduleCleanup();
-        Pair<Integer, Integer> result = getTodayTotalDataBase(System.currentTimeMillis());
+        Pair<Integer, Long> result = getTodayTotalDataBase(System.currentTimeMillis());
         todayTotal.set(result);
         System.out.println("todayTotal inited: " + todayTotal.get());
         final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
         int[] result1 = getYearToDateTraffic(System.currentTimeMillis());
+        upTotal.set(upTotal.get() + result1[0]);
+        downTotal.set(downTotal.get() + result1[1]);
         yearToDateTraffic.set(result1);
+
         env.setParallelism(6);
+   // 解析命令行参数
+    String brokers = "10.48.53.82:9092"; // 默认值
+    List<String> topics = new ArrayList<>();
 
-        // 配置 KafkaSource
-        String brokers = "10.48.53.82:9092";
-        String groupId = "flink-group-SegCar"; // 消费者组ID
+    for (int i = 0; i < args.length; i++) {
+        if ("--brokers".equals(args[i]) && i + 1 < args.length) {
+            brokers = args[++i];
+        } else if ("--topics".equals(args[i]) && i + 1 < args.length) {
+            // 支持逗号分隔的多个topic
+            Collections.addAll(topics, args[++i].split(","));
+        }
+    }
 
-        // 主题列表
-        List<String> topics = Arrays.asList("fiberData1", "fiberData2", "fiberData3", "fiberData4", "fiberData5", "fiberData6", "fiberData7", "fiberData8", "fiberData9", "fiberData10", "fiberData11");
+    // 如果没有指定topics，使用默认值
+    if (topics.isEmpty()) {
+        topics = Arrays.asList("jtkj.jga.path.1"); // 默认topic
+    }
 
+    System.out.println("Using brokers: " + brokers);
+    System.out.println("Using topics: " + topics);
+//
         // 初始化第一个 KafkaSource
-        KafkaSource<String> kafkaSource = KafkaSource.<String>builder()
-                .setBootstrapServers(brokers)
-                .setTopics(topics)
-                .setGroupId(groupId)
-                .setStartingOffsets(OffsetsInitializer.latest())
-                .setProperty("auto.offset.commit", "true")
-                .setValueOnlyDeserializer(new SimpleStringSchema())
-                .build();
-
+    KafkaSource<String> kafkaSource = KafkaSource.<String>builder()
+            .setBootstrapServers(brokers)
+            .setTopics(topics)
+            .setGroupId("flink-group-SegCar1")
+            .setStartingOffsets(OffsetsInitializer.latest())
+            .setProperty("auto.offset.commit", "true")
+            .setValueOnlyDeserializer(new SimpleStringSchema())
+            .build();
         // 创建第一个数据流
         DataStream<String> unionStream = env.fromSource(kafkaSource, WatermarkStrategy.noWatermarks(), "Kafka Sources Save");
 
@@ -134,7 +220,6 @@ public class FlinkQueryApplication {
                             for (PathPoint ppoint : JSON.parseArray(jsonObject.getString("pathList"), PathPoint.class)) {
                                 if (!ppoint.getStakeId().isEmpty()) {
                                     Integer vt = ppoint.getVehicleType();
-                                    ppoint.setOriginalType(vt);
                                     ppoint.setTimeStamp(jsonObject.getString("timeStamp"));
 
                                     // 新增：处理车辆在计算范围内的时间
@@ -322,147 +407,6 @@ public class FlinkQueryApplication {
         return vehicleTimePairs.getOrDefault(vehicleId, Collections.emptyMap());
     }
 
-//  private static class PrimaryTrajectoryProcessor implements FlatMapFunction<String, String> {
-//    private static final long SESSION_TIMEOUT_MS = 30000;
-//    private static final long SAMPLING_INTERVAL_MS = 1000;
-//    private static final int MAX_TRAJECTORY_POINTS = 10000; // 新增：最大轨迹点数限制
-//
-//    // 新增：固定车辆的特殊处理
-//    private static final Set<String> FIXED_VEHICLES = new HashSet<>(Arrays.asList("鄂AU657P", "鄂AH1B68"));
-//    private static final int FIXED_VEHICLE_MAX_POINTS = 500; // 固定车辆的最大轨迹点数
-//
-//    @Override
-//    public void flatMap(String jsonString, Collector<String> out) {
-//        stateLock.lock();
-//        try {
-//            JSONObject jsonObject = new JSONObject(jsonString);
-//            long timeObs = parseTimestamp(jsonObject.getString("timeStamp"));
-//
-//            JSONArray tr = jsonObject.getJSONArray("pathList");
-//
-//            for (int i = 0; i < tr.length(); i++) {
-//                JSONObject tdataObject = tr.getJSONObject(i);
-//                String plateNo = tdataObject.getString("plateNo");
-//                String id = String.valueOf(tdataObject.getLong("id"));
-//                lastSeenTime.put(id, timeObs);
-//                long lastSample = lastSampleTime.getOrDefault(id, 0L);
-//                if (timeObs - lastSample >= SAMPLING_INTERVAL_MS) {
-////                    if (!map.containsKey(id)) {
-////                        initializeNewVehicle(id, plateNo, tdataObject, timeObs);
-////                    } else {
-////                        updateVehicleTrajectory(id, tdataObject, plateNo); // 修改：添加plateNo参数
-////                    }
-//                    lastSampleTime.put(id, timeObs);
-//                }
-//            }
-//            processTimeoutVehicles(timeObs, out);
-//        } catch (Exception e) {
-//            e.printStackTrace();
-//        } finally {
-//            stateLock.unlock();
-//        }
-//    }
-//
-//    // 修改updateVehicleTrajectory方法，添加plateNo参数
-////    private void updateVehicleTrajectory(String id, JSONObject tdata, String plateNo) {
-//////        List<Tuple5<Double, Double, Integer, Integer, Double>> list = map.get(id);
-////
-////        // 检查是否是固定车辆并限制轨迹点数
-////        boolean isFixedVehicle = FIXED_VEHICLES.contains(plateNo);
-////        int maxPoints = isFixedVehicle ? FIXED_VEHICLE_MAX_POINTS : MAX_TRAJECTORY_POINTS;
-////
-////        // 如果轨迹点数超过限制，移除最旧的点
-////        if (list.size() >= maxPoints) {
-////            list.remove(0); // 移除最旧的轨迹点
-////        }
-////
-////        list.add(new Tuple5<>(
-////                tdata.getDouble("longitude"),
-////                tdata.getDouble("latitude"),
-////                tdata.getInt("laneNo"),
-////                getDirectionSafely(tdata),
-////                tdata.getDouble("speed")
-////        ));
-////    }
-//        private long parseTimestamp(String timestampStr) throws Exception {
-//            try {
-//                DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss:SSS");
-//                LocalDateTime localDateTime = LocalDateTime.parse(timestampStr, formatter);
-//                return localDateTime.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
-//            } catch (Exception e) {
-//                DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss:SS");
-//                LocalDateTime localDateTime = LocalDateTime.parse(timestampStr, formatter);
-//                return localDateTime.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
-//            }
-//        }
-////        private void initializeNewVehicle(String id, String plateNo, JSONObject tdata, long timestamp) {
-////            mapTimeSeg.put(id, timestamp + "-" + plateNo + "-" + id);
-////            mapType.put(id, tdata.getInt("vehicleType"));
-////            mapPlateNo.put(id, plateNo); // 存储车牌号
-////            List<Tuple5<Double, Double, Integer, Integer, Double>> list = new ArrayList<>();
-////            list.add(new Tuple5<>(
-////                    tdata.getDouble("longitude"),
-////                    tdata.getDouble("latitude"),
-////                    tdata.getInt("laneNo"),
-////                    getDirectionSafely(tdata),
-////                    tdata.getDouble("speed")
-////            ));
-////            map.put(id, list);
-////        }
-////        private void updateVehicleTrajectory(String id, JSONObject tdata) {
-////            List<Tuple5<Double, Double, Integer, Integer, Double>> list = map.get(id);
-////            list.add(new Tuple5<>(
-////                    tdata.getDouble("longitude"),
-////                    tdata.getDouble("latitude"),
-////                    tdata.getInt("laneNo"),
-////                    getDirectionSafely(tdata),
-////                    tdata.getDouble("speed")
-////            ));
-////        }
-//        private void processTimeoutVehicles(long currentTime, Collector<String> out) {
-//            Set<String> timeoutIds = new HashSet<>();
-//            for (Map.Entry<String, Long> entry : lastSeenTime.entrySet()) {
-//                if (currentTime - entry.getValue() > SESSION_TIMEOUT_MS) {
-//                    timeoutIds.add(entry.getKey());
-//                }
-//            }
-//            for (String id : timeoutIds) {
-//                JSONObject trajectoryJson = new JSONObject();
-//                trajectoryJson.put("timeSeg", mapTimeSeg.get(id));
-//                trajectoryJson.put("type", mapType.get(id));
-//                trajectoryJson.put("latestTime", lastSeenTime.get(id));
-//                trajectoryJson.put("eventList", new JSONArray());
-//                // 获取轨迹点数据
-////                List<Tuple5<Double, Double, Integer, Integer, Double>> points = map.get(id);
-//                List<TrajectoryPoint> trajectoryPoints = new ArrayList<>();
-////                if (points != null) {
-////                    for (Tuple5<Double, Double, Integer, Integer, Double> point : points) {
-////                        trajectoryPoints.add(new TrajectoryPoint(point.f0,point.f1,point.f2,point.f3,point.f4));
-////                    }
-////                }
-//                trajectoryJson.put("trajectory", trajectoryPoints);
-//                out.collect(trajectoryJson.toString());
-////                cleanupVehicle(id);
-//            }
-//        }
-////        private void cleanupVehicle(String id) {
-////            map.remove(id);
-////            mapTimeSeg.remove(id);
-////            mapType.remove(id);
-////            mapPlateNo.remove(id);
-////            lastSeenTime.remove(id);
-////            lastSampleTime.remove(id);
-////        }
-//        // 安全获取方法
-//        private int getDirectionSafely(JSONObject tdata) {
-//            try {
-//                return tdata.getInt("direction");
-//            } catch (JSONException e) {
-//                return -1;
-//            }
-//        }
-//    }
-
     public static class VehicleCounter {
         // 使用 ConcurrentHashMap 记录车辆最后出现日期
         private static final Map<Long, LocalDate> vehicleLastSeen = new ConcurrentHashMap<>();
@@ -471,15 +415,15 @@ public class FlinkQueryApplication {
         // 当前日期（根据事件时间）
         private static volatile String currentDate = LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE);
 
-        // 年度累计流量计数器（上行/下行）
-        private static final AtomicInteger upTotal = new AtomicInteger(0);
-        private static final AtomicInteger downTotal = new AtomicInteger(0);
+
         // 车辆方向缓存（防止重复计数）
         private static final ConcurrentHashMap<Long, Integer> directionCache = new ConcurrentHashMap<>();
         // 方向缓存清理阈值（30天）
         private static final int CACHE_EXPIRE_DAYS = 30;
 
         public static void processVehicle(PathPoint point) {
+
+
             long vehicleId = point.getId();
             int direction = point.getDirection();
             long eventTimeMillis = convertToTimestampMillis(point.getTimeStamp());
@@ -488,49 +432,32 @@ public class FlinkQueryApplication {
                     .toLocalDate();
             String eventDateStr = eventDate.format(DateTimeFormatter.BASIC_ISO_DATE);
 
-            // 处理日期切换
+            // 处理日期切换 - 修复时间戳
             if (!eventDateStr.equals(currentDate)) {
                 currentDate = eventDateStr;
                 dailyCounters.put(currentDate, new AtomicInteger(0));
-                Pair<Integer, Integer> current = todayTotal.get();
-                todayTotal.set(new Pair<>(0, current.getValue()));
+                // 使用当前时间戳，而不是旧值
+                todayTotal.set(new Pair<>(0, System.currentTimeMillis()));
             }
 
             // 更新当日计数器
-            AtomicInteger counter = dailyCounters.get(currentDate);
+            AtomicInteger counter = dailyCounters.computeIfAbsent(currentDate, k -> new AtomicInteger(0));
+
             if (vehicleLastSeen.getOrDefault(vehicleId, LocalDate.MIN).isBefore(eventDate)) {
                 vehicleLastSeen.put(vehicleId, eventDate);
                 int newCount = counter.incrementAndGet();
 
-                // 更新今日总数
+                // 修复更新逻辑 - 使用当前时间戳
                 while (true) {
-                    Pair<Integer, Integer> current = todayTotal.get();
+                    Pair<Integer, Long> current = todayTotal.get();
                     if (todayTotal.compareAndSet(current, new Pair<>(
                             newCount,
-                            current.getValue()
+                            System.currentTimeMillis()  // 使用当前时间戳
                     ))) {
                         break;
                     }
                 }
             }
-
-            // 更新年度累计流量（确保每辆车每年只计数一次）
-            if (direction == 1 || direction == 2) {
-                // 检查是否已计数
-                Integer cachedDirection = directionCache.get(vehicleId);
-                if (cachedDirection == null || cachedDirection != direction) {
-                    // 更新缓存
-                    directionCache.put(vehicleId, direction);
-
-                    // 原子更新计数器
-                    if (direction == 1) {
-                        upTotal.incrementAndGet();
-                    } else {
-                        downTotal.incrementAndGet();
-                    }
-                }
-            }
-
         }
 
         private static final ScheduledExecutorService dateChecker = Executors.newSingleThreadScheduledExecutor();
@@ -617,7 +544,7 @@ public class FlinkQueryApplication {
             config.setPassword(password);
 
             LettuceClientConfiguration clientConfig = LettuceClientConfiguration.builder()
-                    .commandTimeout(Duration.ofSeconds(2))
+                    .commandTimeout(Duration.ofSeconds(6))
                     .build();
 
             LettuceConnectionFactory factory = new LettuceConnectionFactory(config, clientConfig);
@@ -654,7 +581,7 @@ public class FlinkQueryApplication {
             redisTemplate1.opsForValue().set(
                     "v2_" + value.f0, // 使用不同前缀
                     value.f1,
-                    3, TimeUnit.SECONDS // 设置10秒过期
+                    10, TimeUnit.SECONDS // 设置10秒过期
             );
 //            System.out.println("v60_" + value.f0+":  "+redisTemplate1.opsForValue().get("v60_" + value.f0));
 //            System.out.println("v2_" + value.f0+":  "+redisTemplate1.opsForValue().get("v2_" + value.f0));
@@ -857,7 +784,7 @@ public class FlinkQueryApplication {
         return new int[]{175800, 180213};
     }
 
-    public static Pair<Integer, Integer> getTodayTotalMemory(long timeMillis) throws IOException {
+    public static Pair<Integer, Long> getTodayTotalMemory(long timeMillis) throws IOException {
         return todayTotal.get();
     }
 
@@ -916,14 +843,17 @@ public class FlinkQueryApplication {
     static double[] vhs ={0.51,0.52,0.53,0.54,0.55,0.56};
     static double[] vvhs ={0.66,0.68,0.70,0.72,0.74,0.76};
     static double[] vvvhs ={0.86,0.88,0.90,0.92,0.96};
-public static double getSau(){
-//if(map.size()<=1000)return ds[(int) (Math.random() * 6)];
-//if(map.size()<=1500)return ms[(int) (Math.random() * 6)];
-//if(map.size()<=2000)return hs[(int) (Math.random() * 6)];
-//if(map.size()<=3000)return vhs[(int) (Math.random() * 6)];
-//if(map.size()<=4000)return vvhs[(int) (Math.random() * 6)];
-return vvvhs[(int) (Math.random() * 5)];
-}
+    public static double getSau(){
+        if(cnum==0)
+        return vvvhs[(int) (Math.random() * 5)];
+        else{
+            if(cnum<=1000)return ds[(int) (Math.random() * 6)];
+            if(cnum<=1500)return ms[(int) (Math.random() * 6)];
+            if(cnum<=2000)return hs[(int) (Math.random() * 6)];
+            if(cnum<=3500)return vhs[(int) (Math.random() * 6)];
+        else return vvhs[(int) (Math.random() * 6)];
+        }
+    }
 public static double getSau(int num){
 
 

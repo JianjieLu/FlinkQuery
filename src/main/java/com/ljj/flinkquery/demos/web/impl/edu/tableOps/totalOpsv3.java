@@ -1,10 +1,7 @@
 package com.ljj.flinkquery.demos.web.impl.edu.tableOps;
 
 import com.ljj.flinkquery.demos.entity.SectionalFlowData;
-import lombok.AllArgsConstructor;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
+import lombok.*;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.*;
 import org.apache.hadoop.hbase.client.*;
@@ -55,17 +52,20 @@ public class totalOpsv3 {
         // 3. 构建桩号范围字符串
         String stakeRange = startStake + " - " + endStake;
 
-        // 4. 构建RowKey范围
+        // 4. 构建桩号键列表
         List<String> stakeKeys = generateStakeKeys(startStakeNum, endStakeNum);
-        List<RowKeyRange> rowKeyRanges = generateRowKeyRanges(formattedStartTime, formattedEndTime, stakeKeys);
+
+        // 5. 构建RowKey范围
+        List<RowKeyRange> rowKeyRanges = generateRowKeyRanges(stakeKeys, formattedStartTime, formattedEndTime);
         System.out.println(rowKeyRanges);
-        // 5. 从HBase查询数据
+
+        // 6. 从HBase查询数据
         List<TrafficRecord> records = scanTrafficData(rowKeyRanges);
 
-        // 6. 按级别聚合数据
+        // 7. 按级别聚合数据
         Map<String, Map<Integer, TrafficStats>> aggregatedData = aggregateData(records, level);
 
-        // 7. 构建返回结果
+        // 8. 构建返回结果
         TrafficResult result = buildResult(aggregatedData, level);
         result.setStake(stakeRange);
         result.setName(name);
@@ -108,14 +108,15 @@ public class totalOpsv3 {
     }
 
     /**
-     * 生成RowKey范围列表
+     * 生成RowKey范围列表（桩号在前格式）
      */
-    private static List<RowKeyRange> generateRowKeyRanges(String startTime, String endTime, List<String> stakeKeys) {
+    private static List<RowKeyRange> generateRowKeyRanges(List<String> stakeKeys, String startTime, String endTime) {
         List<RowKeyRange> ranges = new ArrayList<>();
         for (String stakeKey : stakeKeys) {
             for (int direction = 1; direction <= 2; direction++) {
-                String startRowKey = startTime + "_" + stakeKey + "_" + direction;
-                String endRowKey = endTime + "_" + stakeKey + "_" + direction;
+                // 桩号在前格式：桩号_时间戳_方向
+                String startRowKey = stakeKey + "_" + startTime + "_" + direction;
+                String endRowKey = stakeKey + "_" + endTime + "_" + direction;
                 ranges.add(new RowKeyRange(startRowKey, endRowKey));
             }
         }
@@ -130,19 +131,21 @@ public class totalOpsv3 {
         Configuration conf = getHBaseConfiguration();
 
         try (Connection connection = ConnectionFactory.createConnection(conf);
-             Table table = connection.getTable(TableName.valueOf("traffic_stats_by_stake"))) {
+             Table table = connection.getTable(TableName.valueOf("traffic_stats_by_section"))) {
 
             for (RowKeyRange range : rowKeyRanges) {
                 Scan scan = new Scan();
                 scan.withStartRow(Bytes.toBytes(range.startRowKey));
                 scan.withStopRow(Bytes.toBytes(range.endRowKey));
                 scan.addFamily(Bytes.toBytes("stats"));
+                System.out.println("range.startRowKey:"+range.startRowKey+"  endRowKey:"+range.endRowKey);
 
                 try (ResultScanner scanner = table.getScanner(scan)) {
                     for (Result result : scanner) {
                         TrafficRecord record = parseResult(result);
                         if (record != null) {
                             records.add(record);
+                            System.out.println(record.toString());
                         }
                     }
                 }
@@ -153,22 +156,22 @@ public class totalOpsv3 {
     }
 
     /**
-     * 解析HBase查询结果
+     * 解析HBase查询结果（桩号在前格式）
      */
     private static TrafficRecord parseResult(Result result) {
         String rowKey = Bytes.toString(result.getRow());
         String[] parts = rowKey.split("_");
         if (parts.length != 3) return null;
 
-        String timeKey = parts[0];
-        String stakeKey = parts[1];
+        // 新格式：桩号_时间戳_方向
+        String stakeKey = parts[0];
+        String timeKey = parts[1];
         int direction = Integer.parseInt(parts[2]);
 
         // 获取各列的值
         int busCount = getIntValue(result, "stats", "bus_count");
         int truckCount = getIntValue(result, "stats", "truck_count");
-        int otherCount = getIntValue(result, "stats", "other_count");
-        int total = busCount + truckCount + otherCount;
+        int total = busCount + truckCount;
 
         return new TrafficRecord(timeKey, stakeKey, direction, total, busCount, truckCount);
     }
@@ -201,8 +204,9 @@ public class totalOpsv3 {
             stats.total += record.total;
             stats.busCount += record.busCount;
             stats.truckCount += record.truckCount;
+            System.out.println("total:"+record.total+" busCount:"+record.busCount+" truckCount:"+record.truckCount);
         }
-
+        System.out.println("=========================a end =======================");
         return result;
     }
 
@@ -271,7 +275,7 @@ public class totalOpsv3 {
         return result;
     }
 
-     /**
+    /**
      * 获取当前时间段和上一时间段的交通统计数据
      * @param startTime 起始时间(yyyy-MM-dd HH:mm:ss格式)
      * @param endTime 结束时间(yyyy-MM-dd HH:mm:ss格式)
@@ -307,7 +311,7 @@ public class totalOpsv3 {
         return new PeriodTrafficCounts(
                 currentCounts.direction1, currentCounts.direction2,
                 previousCounts.direction1, previousCounts.direction2,
-                name,startStake+"-"+endStake
+                name, startStake + "-" + endStake
         );
     }
 
@@ -334,14 +338,16 @@ public class totalOpsv3 {
         int startStakeNum = extractStakeNumber(startStake);
         int endStakeNum = extractStakeNumber(endStake);
 
-        // 3. 构建RowKey范围
+        // 3. 构建桩号键列表
         List<String> stakeKeys = generateStakeKeys(startStakeNum, endStakeNum);
-        List<RowKeyRange> rowKeyRanges = generateRowKeyRanges(formattedStartTime, formattedEndTime, stakeKeys);
 
-        // 4. 从HBase查询数据
+        // 4. 构建RowKey范围（桩号在前格式）
+        List<RowKeyRange> rowKeyRanges = generateRowKeyRanges(stakeKeys, formattedStartTime, formattedEndTime);
+
+        // 5. 从HBase查询数据
         List<TrafficRecord> records = scanTrafficData(rowKeyRanges);
 
-        // 5. 计算两个方向的总车辆数
+        // 6. 计算两个方向的总车辆数
         int direction1Total = 0;
         int direction2Total = 0;
 
@@ -356,7 +362,7 @@ public class totalOpsv3 {
         return new TrafficCounts(direction1Total, direction2Total);
     }
 
-    // ==================== 新增实体类定义 ====================
+    // ==================== 实体类定义 ====================
 
     /**
      * 时间段交通统计数据实体类
@@ -373,7 +379,8 @@ public class totalOpsv3 {
         private String name; // 路段名称
         private String stake;
     }
-        @AllArgsConstructor
+
+    @AllArgsConstructor
     @NoArgsConstructor
     @Getter
     @Setter
@@ -383,7 +390,8 @@ public class totalOpsv3 {
         private int yoy;
         private int mom;
     }
-        @AllArgsConstructor
+
+    @AllArgsConstructor
     @NoArgsConstructor
     @Getter
     @Setter
@@ -391,18 +399,18 @@ public class totalOpsv3 {
         private String name;
         private String stake;
         private List<noPiece> dirList;
-
     }
-        @AllArgsConstructor
+
+    @AllArgsConstructor
     @NoArgsConstructor
     @Getter
     @Setter
-public class noResult {
+    public static class noResult {
         private int code;
-    private String message;
-    private noData data;
-    private boolean status;
-}
+        private String message;
+        private noData data;
+        private boolean status;
+    }
 
     /**
      * 交通统计数据实体类
@@ -419,6 +427,8 @@ public class noResult {
     /**
      * 内部类：RowKey范围
      */
+    @Data
+    @ToString
     private static class RowKeyRange {
         String startRowKey;
         String endRowKey;
@@ -432,6 +442,8 @@ public class noResult {
     /**
      * 内部类：交通记录
      */
+    @Data
+    @ToString
     private static class TrafficRecord {
         String timeKey;
         String stakeKey;
@@ -467,8 +479,6 @@ public class noResult {
             return admin.tableExists(TableName.valueOf(tableName));
         }
     }
-
-    // ==================== 实体类定义 ====================
 
     /**
      * 交通统计结果实体类

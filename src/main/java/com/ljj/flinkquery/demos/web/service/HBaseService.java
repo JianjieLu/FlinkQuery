@@ -21,6 +21,6 @@ public interface HBaseService {
     jizhanResult getStFlow(String stId,Long startTime,Long endTime) throws IOException;
     SectionalFlowResult getSectionalFlow(Long startTime, Long endTime, String startMileage, String endMileage, Double Longitude1, Double Latitude1, Double Longitude2, Double Latitude2, Integer level) throws IOException;
     SectionalBatchFlowResult getBatchSectionalFlow(List<SectionalFlowQuery> queries);
-    TimeSpatialResult getByTimeSpatial(Long startTime, Long endTime, String startMileage, String endMileage, Double Longitude1, Double Latitude1, Double Longitude2, Double Latitude2) throws IOException;
+    TimeSpatialResult getByTimeSpatial(Long startTime, Long endTime, String startMileage, String endMileage, Double Longitude1, Double Latitude1, Double Longitude2, Double Latitude2,Integer level) throws IOException;
 
 }

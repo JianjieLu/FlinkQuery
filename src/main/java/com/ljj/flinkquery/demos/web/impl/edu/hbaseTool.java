@@ -9,11 +9,11 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
+import java.util.*;
+
 import com.ljj.flinkquery.demos.entity.Location;
 
+import static com.ljj.flinkquery.demos.web.impl.edu.tools.HBaseTableScanner.getQuarterTablesInRange;
 import static java.lang.Math.abs;
 
 public class hbaseTool {
@@ -30,7 +30,9 @@ public class hbaseTool {
 
         // 格式化为字符串
         String dateTimeStr = dateTime.format(formatter);
-        return "JTSTCar_"+dateTimeStr;
+        Set<String> s=getQuarterTablesInRange(timestamp,timestamp+1);
+        Iterator<String> iterator=s.iterator();
+        return iterator.next();
     }
         public static String convertToCongestionTableName (long timestamp,int direction){
         // 定义日期时间格式

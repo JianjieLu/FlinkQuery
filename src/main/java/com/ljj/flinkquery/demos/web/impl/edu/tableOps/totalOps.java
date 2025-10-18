@@ -488,8 +488,8 @@ public class totalOps {
         }
     }
 
-    public static Pair<Integer, Integer> getTodayTotalDataBase(long timeMillis) throws IOException {
-        long st = System.currentTimeMillis();
+    public static Pair<Integer, Long> getTodayTotalDataBase(long timeMillis) throws IOException {
+//        long st = System.currentTimeMillis();
 //        // 1. 确定日期范围
 //        LocalDate targetDate = Instant.ofEpochMilli(timeMillis)
 //                                      .atZone(ZoneId.systemDefault())
@@ -515,7 +515,7 @@ public class totalOps {
 //
 //                if (!tableExists(connection, tableName)) {
 //                    System.out.println("跳过不存在的表: " + tableName);
-//                    return new Pair<>(0,0);
+//                    return new Pair<>(0,0L);
 //                }
 //
 //                // 5. 获取日期边界
@@ -551,9 +551,9 @@ public class totalOps {
 //        count+=result.get(dateStr).get(i);
 //
 //        }
-        long st1 = System.currentTimeMillis();
+//        long st1 = System.currentTimeMillis();
 
-        return new Pair<>(5737, (int) (st1 - st));
+        return new Pair<>(5737, 0L);
     }
 
 
@@ -1205,6 +1205,598 @@ public static firstResult getNearestMinuteCongestionStats(long timestamp) throws
         return vehicleSegs;
     }
 
+
+
+
+
+
+
+
+
+
+
+
+
+// public static List<VehicleSeg> getVehicleSegmentsByRange(String tableName, Long startTime, Long endTime, Integer startStake, Integer endStake) throws IOException {
+//    List<VehicleSeg> vehicleSegs = new ArrayList<>();
+//    Configuration conf = HBaseConfiguration.create();
+//    conf.set("hbase.zookeeper.quorum", "100.65.38.139,100.65.38.140,100.65.38.141,100.65.38.142,10.48.53.80");
+//    conf.set("hbase.zookeeper.property.clientPort", "2181");
+//
+//    try (Connection connection = ConnectionFactory.createConnection(conf)) {
+//        Table table = connection.getTable(TableName.valueOf(tableName));
+//    // 1. 首先检查表是否存在
+//        Admin admin = connection.getAdmin();
+//        TableName hbaseTableName = TableName.valueOf(tableName);
+//
+//        if (!admin.tableExists(hbaseTableName)) {
+//            System.out.println("表 " + tableName + " 不存在，返回空列表");
+//            return vehicleSegs; // 返回空列表而不是抛出异常
+//        }
+//        // 创建Scan对象
+//        Scan scan = new Scan();
+//        scan.addColumn(Bytes.toBytes("cf"), Bytes.toBytes("VehicleSegments"));
+//
+//        // 创建多行范围过滤器
+//        List<MultiRowRangeFilter.RowRange> ranges = new ArrayList<>();
+//        Long startTimeStamp = startTime / 60000 * 60000;
+//        Long endTimeStamp = endTime / 60000 * 60000;
+//
+//        for (long i = startTimeStamp; i <= endTimeStamp; i += 60000) {
+//            ranges.add(new MultiRowRangeFilter.RowRange(
+//                    Bytes.add(Bytes.toBytes(i), Bytes.toBytes(startStake)), true,
+//                    Bytes.add(Bytes.toBytes(i), Bytes.toBytes(endStake)), true
+//            ));
+//        }
+//
+//        // 4. 使用MultiRowRangeFilter进行高效扫描
+//        MultiRowRangeFilter filter = new MultiRowRangeFilter(ranges);
+//        scan.setFilter(filter);
+//
+//        try {
+//            try (ResultScanner scanner = table.getScanner(scan)) {
+//                for (Result result : scanner) {
+//                    if (result.isEmpty()) continue;
+//
+//                    // 解析车辆数据
+//                    byte[] valueBytes = result.getValue(
+//                            Bytes.toBytes("cf"),
+//                            Bytes.toBytes("VehicleSegments")
+//                    );
+//                    if (valueBytes == null) continue;
+//                    try {
+//                        String jsonStr = Bytes.toString(valueBytes);
+//                        JSONObject data = JSON.parseObject(jsonStr);
+//                        // 解析方向信息
+//                        JSONObject vehicleMapD1 = data.getJSONObject("vehicleSegMapD1");
+//                        JSONObject vehicleMapD2 = data.getJSONObject("vehicleSegMapD2");
+//                        // 处理方向1的车辆
+//                        if (vehicleMapD1 != null) {
+//                            for (String carId : vehicleMapD1.keySet()) {
+//                                JSONObject vehicleJson = vehicleMapD1.getJSONObject(carId);
+//                                VehicleSeg seg = JSON.parseObject(vehicleJson.toString(), VehicleSeg.class);
+//                                seg.setDirection(1); // 设置方向为上行
+//                                vehicleSegs.add(seg);
+//                            }
+//                        }
+//                        // 处理方向2的车辆
+//                        if (vehicleMapD2 != null) {
+//                            for (String carId : vehicleMapD2.keySet()) {
+//                                JSONObject vehicleJson = vehicleMapD2.getJSONObject(carId);
+//                                VehicleSeg seg = JSON.parseObject(vehicleJson.toString(), VehicleSeg.class);
+//                                seg.setDirection(2); // 设置方向为下行
+//                                vehicleSegs.add(seg);
+//                            }
+//                        }
+//                    } catch (Exception e) {
+//                        System.err.println("解析数据失败: " + e.getMessage());
+//                    }
+//                }
+//            }
+//        } catch (IOException e) {
+//            System.err.println("HBase扫描失败: " + e.getMessage());
+//            throw e;
+//        }
+//    }
+//
+//    return vehicleSegs;
+//}
+    public static List<VehicleSeg> getVehicleSegmentsByRange(String tableName, Long startTime, Long endTime, Integer startStake, Integer endStake) throws IOException {
+    List<VehicleSeg> vehicleSegs = new ArrayList<>();
+    Configuration conf = HBaseConfiguration.create();
+    conf.set("hbase.zookeeper.quorum", "100.65.38.139,100.65.38.140,100.65.38.141,100.65.38.142,10.48.53.80");
+    conf.set("hbase.zookeeper.property.clientPort", "2181");
+
+    try (Connection connection = ConnectionFactory.createConnection(conf)) {
+        Table table = connection.getTable(TableName.valueOf(tableName));
+        Admin admin = connection.getAdmin();
+        TableName hbaseTableName = TableName.valueOf(tableName);
+
+        if (!admin.tableExists(hbaseTableName)) {
+            System.out.println("表 " + tableName + " 不存在，返回空列表");
+            return vehicleSegs;
+        }
+
+        // 创建Scan对象
+        Scan scan = new Scan();
+        scan.addColumn(Bytes.toBytes("cf"), Bytes.toBytes("VehicleSegments"));
+
+        // 创建多行范围过滤器
+        List<MultiRowRangeFilter.RowRange> ranges = new ArrayList<>();
+        Long startTimeStamp = startTime / 60000 * 60000;
+        Long endTimeStamp = endTime / 60000 * 60000;
+
+        // 确保桩号范围有效
+        int actualStartStake = Math.min(startStake, endStake);
+        int actualEndStake = Math.max(startStake, endStake);
+
+        for (long i = startTimeStamp; i <= endTimeStamp; i += 60000) {
+            // 使用更安全的方式构造行键
+            byte[] timeBytes = Bytes.toBytes(i);
+
+            // 为桩号添加固定长度，确保比较正确
+            byte[] startStakeBytes = String.format("%010d", actualStartStake).getBytes();
+            byte[] endStakeBytes = String.format("%010d", actualEndStake).getBytes();
+
+            byte[] startRow = Bytes.add(timeBytes, startStakeBytes);
+            byte[] endRow = Bytes.add(timeBytes, endStakeBytes);
+
+            // 验证范围有效性
+            if (Bytes.compareTo(startRow, endRow) <= 0) {
+                ranges.add(new MultiRowRangeFilter.RowRange(
+                        startRow, true,
+                        endRow, true
+                ));
+            } else {
+                System.err.println("跳过无效范围: startRow > endRow for timestamp " + i);
+            }
+        }
+
+        if (ranges.isEmpty()) {
+            System.out.println("没有有效的查询范围");
+            return vehicleSegs;
+        }
+
+        // 使用MultiRowRangeFilter进行高效扫描
+        MultiRowRangeFilter filter = new MultiRowRangeFilter(ranges);
+        scan.setFilter(filter);
+
+        try {
+            try (ResultScanner scanner = table.getScanner(scan)) {
+                for (Result result : scanner) {
+                    if (result.isEmpty()) continue;
+
+                    // 解析车辆数据
+                    byte[] valueBytes = result.getValue(
+                            Bytes.toBytes("cf"),
+                            Bytes.toBytes("VehicleSegments")
+                    );
+                    if (valueBytes == null) continue;
+
+                    try {
+                        String jsonStr = Bytes.toString(valueBytes);
+                        JSONObject data = JSON.parseObject(jsonStr);
+
+                        // 解析方向信息
+                        JSONObject vehicleMapD1 = data.getJSONObject("vehicleSegMapD1");
+                        JSONObject vehicleMapD2 = data.getJSONObject("vehicleSegMapD2");
+
+                        // 处理方向1的车辆
+                        if (vehicleMapD1 != null) {
+                            for (String carId : vehicleMapD1.keySet()) {
+                                JSONObject vehicleJson = vehicleMapD1.getJSONObject(carId);
+                                VehicleSeg seg = JSON.parseObject(vehicleJson.toString(), VehicleSeg.class);
+                                seg.setDirection(1);
+                                vehicleSegs.add(seg);
+                            }
+                        }
+
+                        // 处理方向2的车辆
+                        if (vehicleMapD2 != null) {
+                            for (String carId : vehicleMapD2.keySet()) {
+                                JSONObject vehicleJson = vehicleMapD2.getJSONObject(carId);
+                                VehicleSeg seg = JSON.parseObject(vehicleJson.toString(), VehicleSeg.class);
+                                seg.setDirection(2);
+                                vehicleSegs.add(seg);
+                            }
+                        }
+                    } catch (Exception e) {
+                        System.err.println("解析数据失败: " + e.getMessage());
+                    }
+                }
+            }
+        } catch (IOException e) {
+            System.err.println("HBase扫描失败: " + e.getMessage());
+            throw e;
+        }
+    }
+
+    return vehicleSegs;
+}
+
+   public static List<VehicleSeg> getVehicleSegmentsByakRange(String tableName, Long startTime, Long endTime, Integer startStake, Integer endStake) throws IOException {
+    List<VehicleSeg> vehicleSegs = new ArrayList<>();
+    Configuration conf = HBaseConfiguration.create();
+    conf.set("hbase.zookeeper.quorum", "100.65.38.139,100.65.38.140,100.65.38.141,100.65.38.142,10.48.53.80");
+    conf.set("hbase.zookeeper.property.clientPort", "2181");
+
+    try (Connection connection = ConnectionFactory.createConnection(conf)) {
+        Table table = connection.getTable(TableName.valueOf(tableName));
+    // 1. 首先检查表是否存在
+        Admin admin = connection.getAdmin();
+        TableName hbaseTableName = TableName.valueOf(tableName);
+
+        if (!admin.tableExists(hbaseTableName)) {
+            System.out.println("表 " + tableName + " 不存在，返回空列表");
+            return vehicleSegs; // 返回空列表而不是抛出异常
+        }
+        // 创建Scan对象
+        Scan scan = new Scan();
+        scan.addColumn(Bytes.toBytes("cf"), Bytes.toBytes("VehicleSegments"));
+
+        // 创建多行范围过滤器
+        List<MultiRowRangeFilter.RowRange> ranges = new ArrayList<>();
+        Long startTimeStamp = startTime / 60000 * 60000;
+        Long endTimeStamp = endTime / 60000 * 60000;
+
+        for (Long i = startTimeStamp; i <= endTimeStamp; i += 60000) {
+            // 构建行键范围
+            byte[] startRow = Bytes.add(Bytes.toBytes(i + "_AK" + startStake + "_"), new byte[]{0x7F});
+            byte[] endRow = Bytes.add(Bytes.toBytes(i + "_AK" + endStake + "_"), new byte[]{0x7F});
+
+            ranges.add(new MultiRowRangeFilter.RowRange(startRow, true, endRow, true));
+        }
+
+        // 设置多行范围过滤器
+        if (!ranges.isEmpty()) {
+            MultiRowRangeFilter filter = new MultiRowRangeFilter(ranges);
+            scan.setFilter(filter);
+        }
+
+        try (ResultScanner scanner = table.getScanner(scan)) {
+            for (Result result : scanner) {
+                if (result.isEmpty()) continue;
+
+                // 解析车辆数据
+                byte[] valueBytes = result.getValue(
+                    Bytes.toBytes("cf"),
+                    Bytes.toBytes("VehicleSegments")
+                );
+
+                if (valueBytes == null) continue;
+
+                try {
+                    String jsonStr = Bytes.toString(valueBytes);
+                    JSONObject data = JSON.parseObject(jsonStr);
+
+                    // 解析方向信息
+                    JSONObject vehicleMapD1 = data.getJSONObject("vehicleSegMapD1");
+                    JSONObject vehicleMapD2 = data.getJSONObject("vehicleSegMapD2");
+
+                    // 处理方向1的车辆
+                    if (vehicleMapD1 != null) {
+                        for (String carId : vehicleMapD1.keySet()) {
+                            JSONObject vehicleJson = vehicleMapD1.getJSONObject(carId);
+                            VehicleSeg seg = JSON.parseObject(vehicleJson.toString(), VehicleSeg.class);
+                            seg.setDirection(1); // 设置方向为上行
+                            vehicleSegs.add(seg);
+                        }
+                    }
+
+                    // 处理方向2的车辆
+                    if (vehicleMapD2 != null) {
+                        for (String carId : vehicleMapD2.keySet()) {
+                            JSONObject vehicleJson = vehicleMapD2.getJSONObject(carId);
+                            VehicleSeg seg = JSON.parseObject(vehicleJson.toString(), VehicleSeg.class);
+                            seg.setDirection(2); // 设置方向为下行
+                            vehicleSegs.add(seg);
+                        }
+                    }
+                } catch (Exception e) {
+                    System.err.println("解析数据失败: " + e.getMessage());
+                }
+            }
+        }
+    } catch (IOException e) {
+        System.err.println("HBase扫描失败: " + e.getMessage());
+        throw e;
+    }
+
+    return vehicleSegs;
+}
+
+ public static List<VehicleSeg> getVehicleSegmentsBybkRange(String tableName, Long startTime, Long endTime, Integer startStake, Integer endStake) throws IOException {
+    List<VehicleSeg> vehicleSegs = new ArrayList<>();
+    Configuration conf = HBaseConfiguration.create();
+    conf.set("hbase.zookeeper.quorum", "100.65.38.139,100.65.38.140,100.65.38.141,100.65.38.142,10.48.53.80");
+    conf.set("hbase.zookeeper.property.clientPort", "2181");
+
+    try (Connection connection = ConnectionFactory.createConnection(conf)) {
+        Table table = connection.getTable(TableName.valueOf(tableName));
+    // 1. 首先检查表是否存在
+        Admin admin = connection.getAdmin();
+        TableName hbaseTableName = TableName.valueOf(tableName);
+
+        if (!admin.tableExists(hbaseTableName)) {
+            System.out.println("表 " + tableName + " 不存在，返回空列表");
+            return vehicleSegs; // 返回空列表而不是抛出异常
+        }
+        // 创建Scan对象
+        Scan scan = new Scan();
+        scan.addColumn(Bytes.toBytes("cf"), Bytes.toBytes("VehicleSegments"));
+
+        // 创建多行范围过滤器
+        List<MultiRowRangeFilter.RowRange> ranges = new ArrayList<>();
+        Long startTimeStamp = startTime / 60000 * 60000;
+        Long endTimeStamp = endTime / 60000 * 60000;
+
+        for (Long i = startTimeStamp; i <= endTimeStamp; i += 60000) {
+            // 构建行键范围
+            byte[] startRow = Bytes.add(Bytes.toBytes(i + "_BK" + startStake + "_"), new byte[]{0x7F});
+            byte[] endRow = Bytes.add(Bytes.toBytes(i + "_BK" + endStake + "_"), new byte[]{0x7F});
+
+            ranges.add(new MultiRowRangeFilter.RowRange(startRow, true, endRow, true));
+        }
+
+        // 设置多行范围过滤器
+        if (!ranges.isEmpty()) {
+            MultiRowRangeFilter filter = new MultiRowRangeFilter(ranges);
+            scan.setFilter(filter);
+        }
+
+        try (ResultScanner scanner = table.getScanner(scan)) {
+            for (Result result : scanner) {
+                if (result.isEmpty()) continue;
+
+                // 解析车辆数据
+                byte[] valueBytes = result.getValue(
+                    Bytes.toBytes("cf"),
+                    Bytes.toBytes("VehicleSegments")
+                );
+
+                if (valueBytes == null) continue;
+
+                try {
+                    String jsonStr = Bytes.toString(valueBytes);
+                    JSONObject data = JSON.parseObject(jsonStr);
+
+                    // 解析方向信息
+                    JSONObject vehicleMapD1 = data.getJSONObject("vehicleSegMapD1");
+                    JSONObject vehicleMapD2 = data.getJSONObject("vehicleSegMapD2");
+
+                    // 处理方向1的车辆
+                    if (vehicleMapD1 != null) {
+                        for (String carId : vehicleMapD1.keySet()) {
+                            JSONObject vehicleJson = vehicleMapD1.getJSONObject(carId);
+                            VehicleSeg seg = JSON.parseObject(vehicleJson.toString(), VehicleSeg.class);
+                            seg.setDirection(1); // 设置方向为上行
+                            vehicleSegs.add(seg);
+                        }
+                    }
+
+                    // 处理方向2的车辆
+                    if (vehicleMapD2 != null) {
+                        for (String carId : vehicleMapD2.keySet()) {
+                            JSONObject vehicleJson = vehicleMapD2.getJSONObject(carId);
+                            VehicleSeg seg = JSON.parseObject(vehicleJson.toString(), VehicleSeg.class);
+                            seg.setDirection(2); // 设置方向为下行
+                            vehicleSegs.add(seg);
+                        }
+                    }
+                } catch (Exception e) {
+                    System.err.println("解析数据失败: " + e.getMessage());
+                }
+            }
+        }
+    } catch (IOException e) {
+        System.err.println("HBase扫描失败: " + e.getMessage());
+        throw e;
+    }
+
+    return vehicleSegs;
+}
+ public static List<VehicleSeg> getVehicleSegmentsByckRange(String tableName, Long startTime, Long endTime, Integer startStake, Integer endStake) throws IOException {
+    List<VehicleSeg> vehicleSegs = new ArrayList<>();
+    Configuration conf = HBaseConfiguration.create();
+    conf.set("hbase.zookeeper.quorum", "100.65.38.139,100.65.38.140,100.65.38.141,100.65.38.142,10.48.53.80");
+    conf.set("hbase.zookeeper.property.clientPort", "2181");
+
+    try (Connection connection = ConnectionFactory.createConnection(conf)) {
+        Table table = connection.getTable(TableName.valueOf(tableName));
+    // 1. 首先检查表是否存在
+        Admin admin = connection.getAdmin();
+        TableName hbaseTableName = TableName.valueOf(tableName);
+
+        if (!admin.tableExists(hbaseTableName)) {
+            System.out.println("表 " + tableName + " 不存在，返回空列表");
+            return vehicleSegs; // 返回空列表而不是抛出异常
+        }
+        // 创建Scan对象
+        Scan scan = new Scan();
+        scan.addColumn(Bytes.toBytes("cf"), Bytes.toBytes("VehicleSegments"));
+
+        // 创建多行范围过滤器
+        List<MultiRowRangeFilter.RowRange> ranges = new ArrayList<>();
+        Long startTimeStamp = startTime / 60000 * 60000;
+        Long endTimeStamp = endTime / 60000 * 60000;
+
+        for (Long i = startTimeStamp; i <= endTimeStamp; i += 60000) {
+            // 构建行键范围
+            byte[] startRow = Bytes.add(Bytes.toBytes(i + "_CK" + startStake + "_"), new byte[]{0x7F});
+            byte[] endRow = Bytes.add(Bytes.toBytes(i + "_CK" + endStake + "_"), new byte[]{0x7F});
+
+            ranges.add(new MultiRowRangeFilter.RowRange(startRow, true, endRow, true));
+        }
+
+        // 设置多行范围过滤器
+        if (!ranges.isEmpty()) {
+            MultiRowRangeFilter filter = new MultiRowRangeFilter(ranges);
+            scan.setFilter(filter);
+        }
+
+        try (ResultScanner scanner = table.getScanner(scan)) {
+            for (Result result : scanner) {
+                if (result.isEmpty()) continue;
+
+                // 解析车辆数据
+                byte[] valueBytes = result.getValue(
+                    Bytes.toBytes("cf"),
+                    Bytes.toBytes("VehicleSegments")
+                );
+
+                if (valueBytes == null) continue;
+
+                try {
+                    String jsonStr = Bytes.toString(valueBytes);
+                    JSONObject data = JSON.parseObject(jsonStr);
+
+                    // 解析方向信息
+                    JSONObject vehicleMapD1 = data.getJSONObject("vehicleSegMapD1");
+                    JSONObject vehicleMapD2 = data.getJSONObject("vehicleSegMapD2");
+
+                    // 处理方向1的车辆
+                    if (vehicleMapD1 != null) {
+                        for (String carId : vehicleMapD1.keySet()) {
+                            JSONObject vehicleJson = vehicleMapD1.getJSONObject(carId);
+                            VehicleSeg seg = JSON.parseObject(vehicleJson.toString(), VehicleSeg.class);
+                            seg.setDirection(1); // 设置方向为上行
+                            vehicleSegs.add(seg);
+                        }
+                    }
+
+                    // 处理方向2的车辆
+                    if (vehicleMapD2 != null) {
+                        for (String carId : vehicleMapD2.keySet()) {
+                            JSONObject vehicleJson = vehicleMapD2.getJSONObject(carId);
+                            VehicleSeg seg = JSON.parseObject(vehicleJson.toString(), VehicleSeg.class);
+                            seg.setDirection(2); // 设置方向为下行
+                            vehicleSegs.add(seg);
+                        }
+                    }
+                } catch (Exception e) {
+                    System.err.println("解析数据失败: " + e.getMessage());
+                }
+            }
+        }
+    } catch (IOException e) {
+        System.err.println("HBase扫描失败: " + e.getMessage());
+        throw e;
+    }
+
+    return vehicleSegs;
+}
+ public static List<VehicleSeg> getVehicleSegmentsBydkRange(String tableName, Long startTime, Long endTime, Integer startStake, Integer endStake) throws IOException {
+    List<VehicleSeg> vehicleSegs = new ArrayList<>();
+    Configuration conf = HBaseConfiguration.create();
+    conf.set("hbase.zookeeper.quorum", "100.65.38.139,100.65.38.140,100.65.38.141,100.65.38.142,10.48.53.80");
+    conf.set("hbase.zookeeper.property.clientPort", "2181");
+
+    try (Connection connection = ConnectionFactory.createConnection(conf)) {
+        Table table = connection.getTable(TableName.valueOf(tableName));
+    // 1. 首先检查表是否存在
+        Admin admin = connection.getAdmin();
+        TableName hbaseTableName = TableName.valueOf(tableName);
+
+        if (!admin.tableExists(hbaseTableName)) {
+            System.out.println("表 " + tableName + " 不存在，返回空列表");
+            return vehicleSegs; // 返回空列表而不是抛出异常
+        }
+        // 创建Scan对象
+        Scan scan = new Scan();
+        scan.addColumn(Bytes.toBytes("cf"), Bytes.toBytes("VehicleSegments"));
+
+        // 创建多行范围过滤器
+        List<MultiRowRangeFilter.RowRange> ranges = new ArrayList<>();
+        Long startTimeStamp = startTime / 60000 * 60000;
+        Long endTimeStamp = endTime / 60000 * 60000;
+
+        for (Long i = startTimeStamp; i <= endTimeStamp; i += 60000) {
+            // 构建行键范围
+            byte[] startRow = Bytes.add(Bytes.toBytes(i + "_DK" + startStake + "_"), new byte[]{0x7F});
+            byte[] endRow = Bytes.add(Bytes.toBytes(i + "_DK" + endStake + "_"), new byte[]{0x7F});
+
+            ranges.add(new MultiRowRangeFilter.RowRange(startRow, true, endRow, true));
+        }
+
+        // 设置多行范围过滤器
+        if (!ranges.isEmpty()) {
+            MultiRowRangeFilter filter = new MultiRowRangeFilter(ranges);
+            scan.setFilter(filter);
+        }
+
+        try (ResultScanner scanner = table.getScanner(scan)) {
+            for (Result result : scanner) {
+                if (result.isEmpty()) continue;
+
+                // 解析车辆数据
+                byte[] valueBytes = result.getValue(
+                    Bytes.toBytes("cf"),
+                    Bytes.toBytes("VehicleSegments")
+                );
+
+                if (valueBytes == null) continue;
+
+                try {
+                    String jsonStr = Bytes.toString(valueBytes);
+                    JSONObject data = JSON.parseObject(jsonStr);
+
+                    // 解析方向信息
+                    JSONObject vehicleMapD1 = data.getJSONObject("vehicleSegMapD1");
+                    JSONObject vehicleMapD2 = data.getJSONObject("vehicleSegMapD2");
+
+                    // 处理方向1的车辆
+                    if (vehicleMapD1 != null) {
+                        for (String carId : vehicleMapD1.keySet()) {
+                            JSONObject vehicleJson = vehicleMapD1.getJSONObject(carId);
+                            VehicleSeg seg = JSON.parseObject(vehicleJson.toString(), VehicleSeg.class);
+                            seg.setDirection(1); // 设置方向为上行
+                            vehicleSegs.add(seg);
+                        }
+                    }
+
+                    // 处理方向2的车辆
+                    if (vehicleMapD2 != null) {
+                        for (String carId : vehicleMapD2.keySet()) {
+                            JSONObject vehicleJson = vehicleMapD2.getJSONObject(carId);
+                            VehicleSeg seg = JSON.parseObject(vehicleJson.toString(), VehicleSeg.class);
+                            seg.setDirection(2); // 设置方向为下行
+                            vehicleSegs.add(seg);
+                        }
+                    }
+                } catch (Exception e) {
+                    System.err.println("解析数据失败: " + e.getMessage());
+                }
+            }
+        }
+    } catch (IOException e) {
+        System.err.println("HBase扫描失败: " + e.getMessage());
+        throw e;
+    }
+
+    return vehicleSegs;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 public static List<hbaseVe.VehicleSegAccumulator> getVeByRowkeys(String tableName, List<String> rowkeys) {
     List<hbaseVe.VehicleSegAccumulator> results = new ArrayList<>();
     if (rowkeys == null || rowkeys.isEmpty()) {
@@ -1222,8 +1814,15 @@ public static List<hbaseVe.VehicleSegAccumulator> getVeByRowkeys(String tableNam
         }
 
         try (Table table = connection.getTable(TableName.valueOf(tableName));
+
              Admin admin = connection.getAdmin()) {
 
+        TableName hbaseTableName = TableName.valueOf(tableName);
+
+        if (!admin.tableExists(hbaseTableName)) {
+            System.out.println("表 " + tableName + " 不存在，返回空列表");
+            return results; // 返回空列表而不是抛出异常
+        }
             // 创建扫描器
             Scan scan = new Scan();
             scan.addColumn(Bytes.toBytes("cf"), Bytes.toBytes("VehicleSegments"));
@@ -1302,7 +1901,14 @@ public static List<hbaseVe.VehicleSegAccumulator> filterScan(String tableName, L
 
     try (Connection connection = ConnectionFactory.createConnection(conf)) {
         Table table = connection.getTable(TableName.valueOf(tableName));
+    // 1. 首先检查表是否存在
+        Admin admin = connection.getAdmin();
+        TableName hbaseTableName = TableName.valueOf(tableName);
 
+        if (!admin.tableExists(hbaseTableName)) {
+            System.out.println("表 " + tableName + " 不存在，返回空列表");
+            return results; // 返回空列表而不是抛出异常
+        }
         // 2. 创建Scan对象
         Scan scan = new Scan();
 
@@ -1376,11 +1982,17 @@ public static List<Integer> getVehicleCountByDirection(String tableName, Long st
 
         try (Connection connection = ConnectionFactory.createConnection(conf)) {
             Table table = connection.getTable(TableName.valueOf(tableName));
+   // 1. 首先检查表是否存在
+        Admin admin = connection.getAdmin();
+        TableName hbaseTableName = TableName.valueOf(tableName);
 
+        if (!admin.tableExists(hbaseTableName)) {
+            System.out.println("表 " + tableName + " 不存在，返回空列表");
+            return new ArrayList<>(); // 返回空列表而不是抛出异常
+        }
             // 2. 创建Scan对象
             Scan scan = new Scan();
 
-            long beforeQueriesTime = System.currentTimeMillis();
 
             List<MultiRowRangeFilter.RowRange> ranges = new ArrayList<>();
             Long startTimeStamp = startTime / 60000 * 60000;
@@ -1453,6 +2065,7 @@ public static List<Integer> getVehicleCountByDirection(String tableName, Long st
         }
 
     List<Integer> list = Arrays.asList(upTotal, busUp, trackUp,downTotal, busDown, trackDown);
+
        System.out.println("tableName:"+tableName+"  result:(upTotal, busUp, trackUp,downTotal, busDown, trackDown): "+list);
     return list;
 }
@@ -1468,7 +2081,14 @@ public static List<Integer> se(String tableName, Long startTime, Long endTime, I
 
     try (Connection connection = ConnectionFactory.createConnection(conf)) {
         Table table = connection.getTable(TableName.valueOf(tableName));
+   // 1. 首先检查表是否存在
+        Admin admin = connection.getAdmin();
+        TableName hbaseTableName = TableName.valueOf(tableName);
 
+        if (!admin.tableExists(hbaseTableName)) {
+            System.out.println("表 " + tableName + " 不存在，返回空列表");
+            return new ArrayList<>(); // 返回空列表而不是抛出异常
+        }
         // 创建Scan对象
         Scan scan = new Scan();
 
@@ -1551,6 +2171,14 @@ public static List<Integer> se(String tableName, Long startTime, Long endTime, I
         }
 
         try (Table table = connection.getTable(TableName.valueOf(tableName))) {
+              // 1. 首先检查表是否存在
+        Admin admin = connection.getAdmin();
+        TableName hbaseTableName = TableName.valueOf(tableName);
+
+        if (!admin.tableExists(hbaseTableName)) {
+            System.out.println("表 " + tableName + " 不存在，返回空列表");
+            return new ArrayList<>(); // 返回空列表而不是抛出异常
+        }
             // 2. 构建扫描器，一次性获取所有相关行
             Scan scan = new Scan();
             scan.setCaching(1000);
@@ -1678,6 +2306,7 @@ public static List<Integer> se(String tableName, Long startTime, Long endTime, I
             }
 
             try (Table table = connection.getTable(TableName.valueOf(tableName))) {
+
                 Get get = new Get(Bytes.toBytes(rowkey));
                 get.addColumn(Bytes.toBytes("cf"), Bytes.toBytes("VehicleSegments"));
                 Result result = table.get(get);
@@ -1724,7 +2353,12 @@ public static List<Integer> se(String tableName, Long startTime, Long endTime, I
         conf.set("hbase.zookeeper.property.clientPort", "2181");  // Zookeeper 端口
         List<CrowdedInfo> crowdedInfos = new ArrayList<>();
         try (Connection connection = ConnectionFactory.createConnection(conf);
+
              Table table = connection.getTable(TableName.valueOf(tableName))) {
+               if (!isTableExists(connection, tableName)) {
+                System.out.println("表 " + tableName + " 不存在");
+                return crowdedInfos; // 直接返回空列表
+            }
             Get get = new Get(Bytes.toBytes(rowkey));
 
             // 指定列族和列名
@@ -1921,11 +2555,6 @@ public static List<Integer> se(String tableName, Long startTime, Long endTime, I
 
         // 2. 获取该日期在一年中的序号（1月1日=1，12月31日=365或366）
         return zdt.getDayOfYear();
-    }
-
-
-    public static SectionalFlowPiece getSectionalFlowPiece(String startTime,String endTime,String startStake,String endStake ){
-return null;
     }
     @Data
     @Getter

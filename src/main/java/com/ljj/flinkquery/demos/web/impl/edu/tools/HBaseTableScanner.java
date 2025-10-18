@@ -59,7 +59,7 @@ public class HBaseTableScanner {
     /**
      * 获取时间范围内的季度表
      */
-    private static Set<String> getQuarterTablesInRange(long startTimestamp, long endTimestamp) {
+    public static Set<String> getQuarterTablesInRange(long startTimestamp, long endTimestamp) {
         Set<String> tables = new TreeSet<>();
 
         LocalDateTime startDate = LocalDateTime.ofInstant(
@@ -148,7 +148,7 @@ public class HBaseTableScanner {
      * 生成季度表名（格式：JTSTCar_2025Q3）
      */
     private static String getQuarterTableName(int year, int quarter) {
-        return "JTSTCar_" + year + "Q" + quarter;
+        return "RFSTCar_" + year + "Q" + quarter;
     }
 
     /**
@@ -168,6 +168,23 @@ public class HBaseTableScanner {
         }
 
         public String getEndKey() {
+            return endKey;
+        }
+    }
+       public static class KeyRange1 {
+        private final Long startKey;
+        private final Long endKey;
+
+        public KeyRange1(Long startKey, Long endKey) {
+            this.startKey = startKey;
+            this.endKey = endKey;
+        }
+
+        public Long getStartKey() {
+            return startKey;
+        }
+
+        public Long getEndKey() {
             return endKey;
         }
     }

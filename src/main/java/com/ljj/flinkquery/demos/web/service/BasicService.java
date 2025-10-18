@@ -1,10 +1,9 @@
 package com.ljj.flinkquery.demos.web.service;
 
 import com.ljj.flinkquery.FlinkQueryApplication;
-import com.ljj.flinkquery.demos.entity.watch.carNumResult;
-import com.ljj.flinkquery.demos.entity.watch.flowNo;
-import com.ljj.flinkquery.demos.entity.watch.sectionLosResult;
-import com.ljj.flinkquery.demos.entity.watch.zaEachSitResult;
+import com.ljj.flinkquery.demos.entity.ZaFlowNoResult;
+import com.ljj.flinkquery.demos.entity.watch.*;
+import com.ljj.flinkquery.demos.web.impl.edu.querys.TollStationFlowCalculator;
 import com.ljj.flinkquery.demos.web.impl.edu.tableOps.totalOpsv3;
 import org. json. JSONObject;
 import com.ljj.flinkquery.demos.entity.newFive.firstResult;
@@ -48,5 +47,6 @@ double[] test1(Long timestamp) throws IOException;
 secondResult test2(Long timestamp);
 Map<String, Map<Integer, Map<Integer, Integer>>> test3(Long timestamp) throws IOException, InterruptedException, ClassNotFoundException, ExecutionException;
 carNumResult getCarNumber(String beginTime, String endTime, String startStake, String endStake, int level) throws IOException;
-flowNo getFlowNo(String startTime,String endTime,String startStake,String endStake) throws IOException;
+flowNoNew getFlowNo(String startTime, String endTime, String startStake, String endStake) throws IOException;
+ZaFlowNoResult getZaFlowNo(String startTime, String endTime, String startStake, String endStake) throws IOException;
 }

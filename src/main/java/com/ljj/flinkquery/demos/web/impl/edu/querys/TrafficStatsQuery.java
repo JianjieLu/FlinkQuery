@@ -1,11 +1,12 @@
 package com.ljj.flinkquery.demos.web.impl.edu.querys;
-import com.ljj.flinkquery.demos.web.impl.edu.tableOps.totalOps;
+
 import javafx.util.Pair;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.*;
 import org.apache.hadoop.hbase.client.*;
 import org.apache.hadoop.hbase.filter.*;
 import org.apache.hadoop.hbase.util.Bytes;
+
 import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.*;
@@ -19,7 +20,7 @@ public class TrafficStatsQuery {
     private static final SimpleDateFormat HOUR_FORMAT = new SimpleDateFormat("yyyyMMddHH");
     private static final SimpleDateFormat DAY_FORMAT = new SimpleDateFormat("yyyyMMdd");
 
-    public static Pair<List<List<Integer>>,List<String>> queryTrafficStats(
+    public static Pair<List<List<Integer>>, List<String>> queryTrafficStats(
             String tableName,
             long stt,
             long ett,
@@ -36,7 +37,7 @@ public class TrafficStatsQuery {
         // 获取时间范围内的所有小时
         List<String> hours = getHourRange(stt, ett);
         if (hours.isEmpty()) {
-            return new Pair<>(result,null);
+            return new Pair<>(result, null);
         }
         String startHour = hours.get(0);
         String endHour = hours.get(hours.size() - 1);
@@ -51,18 +52,24 @@ public class TrafficStatsQuery {
             // 2. 设置行键范围过滤器
             FilterList filterList = new FilterList(FilterList.Operator.MUST_PASS_ALL);
 
-            // 时间范围过滤器
-            RowFilter timeFilter = new RowFilter(CompareFilter.CompareOp.GREATER_OR_EQUAL,
-                    new BinaryComparator(Bytes.toBytes(startHour + "_K" + startStake + "_")));
-            filterList.addFilter(timeFilter);
+            // 桩号范围过滤器（新格式：桩号在前）
+            // 起始行键：最小桩号_最小时间戳_最小方向
+            String startRowKey = "K" + startStake + "_" + startHour + "_1";
+            // 结束行键：最大桩号_最大时间戳_最大方向
+            String endRowKey = "K" + endStake + "_" + endHour + "_2";
 
-            timeFilter = new RowFilter(CompareFilter.CompareOp.LESS_OR_EQUAL,
-                    new BinaryComparator(Bytes.toBytes(endHour + "_K" + endStake + "_" + 2)));
-            filterList.addFilter(timeFilter);
+            // 行键范围过滤器
+            RowFilter startFilter = new RowFilter(CompareFilter.CompareOp.GREATER_OR_EQUAL,
+                    new BinaryComparator(Bytes.toBytes(startRowKey)));
+            filterList.addFilter(startFilter);
 
-            // 桩号范围过滤器
+            RowFilter endFilter = new RowFilter(CompareFilter.CompareOp.LESS_OR_EQUAL,
+                    new BinaryComparator(Bytes.toBytes(endRowKey)));
+            filterList.addFilter(endFilter);
+
+            // 桩号精确范围过滤器（确保只扫描指定桩号）
             RegexStringComparator regex = new RegexStringComparator(
-                    ".*_K(" + startStake + "|" + (startStake+1) + "|...|" + endStake + ")_\\d");
+                    "K(" + startStake + "|" + (startStake + 1) + "|...|" + endStake + ")_\\d{10}_[12]");
             RowFilter stakeFilter = new RowFilter(CompareFilter.CompareOp.EQUAL, regex);
             filterList.addFilter(stakeFilter);
 
@@ -89,8 +96,9 @@ public class TrafficStatsQuery {
 
                 if (parts.length < 3) continue; // 无效行键
 
-                String hour = parts[0];
-                String stake = parts[1];
+                // 新格式：桩号_时间戳_方向
+                String stake = parts[0];      // 桩号（如K1234）
+                String hour = parts[1];       // 时间戳（yyyyMMddHH格式）
                 int direction = Integer.parseInt(parts[2]); // 方向（1或2）
 
                 // 只处理在时间范围内的数据
@@ -144,9 +152,8 @@ public class TrafficStatsQuery {
             e.printStackTrace();
         }
 
-        return new Pair<>(result,hours);
+        return new Pair<>(result, hours);
     }
-
 
     /**
      * 按天聚合小时数据
@@ -256,24 +263,23 @@ public class TrafficStatsQuery {
      * @param endTimestamp 结束时间戳（毫秒）
      * @return 小时字符串列表（yyyyMMddHH格式）
      */
-    public static List<String> getHourRange(long startTimestamp, long endTimestamp) {
-        List<String> hours = new ArrayList<>();
+   public static List<String> getHourRange(long startTimestamp, long endTimestamp) {
+    List<String> hours = new ArrayList<>();
 
-        // 向前取整起始时间
-        long start = floorToHour(startTimestamp);
-        // 向后取整结束时间
-        long end = ceilToHour(endTimestamp);
+    // 使用精确的时间范围，不进行ceil取整
+    long start = floorToHour(startTimestamp);
+    long end = endTimestamp; // 不进行ceil，使用原始结束时间
 
-        Calendar cal = Calendar.getInstance();
-        cal.setTimeInMillis(start);
+    Calendar cal = Calendar.getInstance();
+    cal.setTimeInMillis(start);
 
-        while (cal.getTimeInMillis() <= end) {
-            hours.add(toHourString(cal.getTimeInMillis()));
-            cal.add(Calendar.HOUR_OF_DAY, 1);
-        }
-
-        return hours;
+    while (cal.getTimeInMillis() <= end) {
+        hours.add(toHourString(cal.getTimeInMillis()));
+        cal.add(Calendar.HOUR_OF_DAY, 1);
     }
+
+    return hours;
+}
 
     /**
      * 获取时间范围内的所有日期字符串

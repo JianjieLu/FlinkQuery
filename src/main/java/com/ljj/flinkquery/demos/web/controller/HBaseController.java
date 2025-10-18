@@ -109,11 +109,11 @@ public class HBaseController {
       @RequestMapping(value = "/getByTimeSpatial", method = RequestMethod.GET)
       @ResponseBody
       //@RequestParam("tableName") String tableName,
-    public TimeSpatialResult getByTimeSpatial(@RequestParam("startTime") Long startTime, @RequestParam("endTime") Long endTime, @RequestParam(value = "startMileage",required = false) String startMileage, @RequestParam(value = "endMileage",required = false) String endMileage, @RequestParam(value = "Longitude1",required = false)Double Longitude1, @RequestParam(value = "Latitude1",required = false) Double Latitude1, @RequestParam(value = "Longitude2",required = false)Double Longitude2, @RequestParam(value = "Latitude2",required = false)Double Latitude2) {
+    public TimeSpatialResult getByTimeSpatial(@RequestParam("startTime") Long startTime, @RequestParam("endTime") Long endTime, @RequestParam(value = "startMileage",required = false) String startMileage, @RequestParam(value = "endMileage",required = false) String endMileage, @RequestParam(value = "Longitude1",required = false)Double Longitude1, @RequestParam(value = "Latitude1",required = false) Double Latitude1, @RequestParam(value = "Longitude2",required = false)Double Longitude2, @RequestParam(value = "Latitude2",required = false)Double Latitude2,@RequestParam(value = "level",required = false,defaultValue = "0")Integer level) {
         long currentTime = System.currentTimeMillis();
         TimeSpatialResult res;
           try {
-              res=hbaseService.getByTimeSpatial(startTime, endTime,startMileage, endMileage,Longitude1, Latitude1,Longitude2, Latitude2);
+              res=hbaseService.getByTimeSpatial(startTime, endTime,startMileage, endMileage,Longitude1, Latitude1,Longitude2, Latitude2,level);
           } catch (Exception e) {
               throw new RuntimeException(e);
           }

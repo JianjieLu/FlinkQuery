@@ -14,4 +14,5 @@ public class jizhanResult {
     private String message;
     private jizhanUpDownCountData data;
     private boolean status;
+    private long time;
 }

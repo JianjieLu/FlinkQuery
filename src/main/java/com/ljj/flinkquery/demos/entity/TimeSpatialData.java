@@ -43,11 +43,18 @@
         private int downChemicalCount;
         private int downHeavyTrackCount;
 
-        //客货比
-        private double busTrackVal;
-        private double upBusTrackVal;
-        private double downBusTrackVal;
+//        //客货比
+//        private double busTrackVal;
+//        private double upBusTrackVal;
+//        private double downBusTrackVal;
 
+
+        private double busVal ;
+        private double truckVal;
+        private double upBusVal;
+        private double upTruckVal;
+        private double downBusVal;
+        private double downTrackVal;
 
 
         private double  zaAverageSpeed;
@@ -59,10 +66,12 @@
         private int   zaTrackCount;
         private int   zaChemicalCount;
         private int   zaHeavyTrackCount;
-        private double zaBusTrackVal;
+        private double zaTrackVal;
+        private double zaBusVal;
                 // 在TimeSpatialData类中添加LOS相关字段（类定义中）
         private String mainUpLOS;    // 主路上行服务水平
         private String mainDownLOS;    // 主路上行服务水平
-
+        private String mainLOS;    // 主路上行服务水平
+        private int todayTotal;
 
     }

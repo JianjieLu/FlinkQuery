@@ -6,6 +6,7 @@ import com.alibaba.fastjson2.JSONObject;
 import com.google.common.collect.Lists;
 import com.ljj.flinkquery.FlinkQueryApplication;
 import com.ljj.flinkquery.demos.entity.*;
+import com.ljj.flinkquery.demos.entity.VehicleSeg;
 import com.ljj.flinkquery.demos.web.impl.edu.hbaseTool;
 import com.ljj.flinkquery.demos.web.impl.edu.tools.HBaseTableScanner;
 import javafx.util.Pair;
@@ -19,6 +20,8 @@ import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactor
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import java.io.IOException;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -36,8 +39,7 @@ import com.ljj.flinkquery.demos.entity.stakeEnvents.*;
 import com.ljj.flinkquery.demos.entity.GeoUtils.*;
 
 
-import static com.ljj.flinkquery.FlinkQueryApplication.getSau;
-import static com.ljj.flinkquery.FlinkQueryApplication.resultMap;
+import static com.ljj.flinkquery.FlinkQueryApplication.*;
 import static com.ljj.flinkquery.demos.entity.data.Utils.convertFromTimestampMillis;
 import static com.ljj.flinkquery.demos.web.impl.edu.querys.TrafficStatsQuery.aggregateDailyStats;
 import static com.ljj.flinkquery.demos.web.impl.edu.querys.TrafficStatsQuery.queryTrafficStats;
@@ -50,6 +52,7 @@ import static org.apache.commons.lang3.StringUtils.substring;
 //import static com.ljj.flinkquery.FlinkQueryApplication.redisTemplate;
 @Service
 public class HBaseServiceImpl implements HBaseService {
+public static int cnum;
     //ds:HBASE查询优化与性能优化
     // 批量查询方法
 //private Map<Long, VehicleSeg> getVehiclesBatch(String tableName, List<String> rowkeys) {
@@ -204,7 +207,7 @@ private String calculateLOS(double density) {
         long tt = endTime / 1000 * 1000 + 1000;
         String zaStartMil = "";
         String zaEndMil = "";
-        TimeSpatialData kong = new TimeSpatialData(0,0,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, "0","0");
+        TimeSpatialData kong = new TimeSpatialData(0, 0, 0,0,0,0,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, "0","0","0",0);
         TimeSpatialResult t2 = new TimeSpatialResult(200, "————无范围内数据,原因：桩号转换失败", kong, true);
         TimeSpatialData tos = new TimeSpatialData();
         boolean za = true;
@@ -454,6 +457,7 @@ private String calculateLOS(double density) {
                 zn++;
                 zsum += v.getAverageSpeed();
                 Integer vt = v.getOriginalType();
+
                 Integer vet =v.getVehicleType();
                 if (vt != null) {
                     if (vt == 1 || vt == 3 || vt == 7 || vt == 15) zupkeche++;
@@ -484,17 +488,19 @@ private String calculateLOS(double density) {
 
         if (zn != 0) {
             double chemidu = Math.round(((double) mergedMap.size() / zdeltam * 100.0)) / 100.0;
-            double busTrackVal = Math.round((double) zupkeche / zuphuoche * 100.0) / 100.0;
+            double busval = Math.round((double) zupkeche / (zuphuoche+zupkeche) * 100.0) / 100.0;
+            double trackval = 1-busval;
             tos.setZaAverageSpeed(Math.round((zsum / zn * 100.0)) / 100.0);
             tos.setZaCount(zn);
 //            tos.setZaTrafficSaturation(Math.round(zn / (zalen / 1000 + 1) / ((double) (tt - st) / 60000) / ((double) 2200 / 60) * 100.0) / 100.0);
             tos.setZaVehicleDensity(chemidu);
-            tos.setZaCongestionIndex(Math.round((sum / n / 120) * 1000.0) / 1000.0);
+            tos.setZaCongestionIndex(Math.round((120 / (sum / n)) * 1000.0) / 1000.0);
             tos.setZaBusCount(zupkeche);
             tos.setZaTrackCount(zuphuoche);
             tos.setZaChemicalCount(zupweihuaping);
             tos.setZaHeavyTrackCount(zupzhongxinghuoche);
-            tos.setBusTrackVal(busTrackVal);
+            tos.setZaBusVal(busval);
+            tos.setZaTrackVal(trackval);
         } else {
             za = false;
         }
@@ -613,9 +619,12 @@ if (n > 0 && (endM - startM) > 0) {
 //            System.out.println("timestamp: from " + st + "(" + startTime + ") to " + tt + "(" + endTime + ")  SkateID: from " + startMi + "(" + startMileage + ") to " + endMi + "(" + endMileage + ")");
         if (n != 0) {
             double chemidu = Math.round(((double) m.size() / (endM - startM) * 100.0)) / 100.0;
-            double busTrackVal = Math.round((double) (downkeche + upkeche) / (uphuoche + downhuoche) * 100.0) / 100.0;
-            double upbusTrackVal = Math.round((double) (upkeche) / (uphuoche) * 100.0) / 100.0;
-            double downbusTrackVal = Math.round((double) (downkeche) / (downhuoche) * 100.0) / 100.0;
+       double upbval = Math.round((double) (upkeche) / (uphuoche+upkeche) * 100.0) / 100.0;
+            double downbval = Math.round((double) (downkeche) / (downhuoche+downkeche) * 100.0) / 100.0;
+            double uptval = 1-upbval;
+            double downtval = 1-downbval;
+            double bval = Math.round((double) (upkeche+downkeche) / (uphuoche+upkeche+downhuoche+downkeche) * 100.0) / 100.0;
+            double tval = 1-bval;
             tos.setUpAverageSpeed(Math.round((shangxingSum / shangxing1 * 100.0)) / 100.0);
             tos.setDownAverageSpeed(Math.round(xiaxingSum / xiaxing2 * 100.0) / 100.0);
                 tos.setTotalAverageSpeed(Math.round((tos.getUpAverageSpeed()+tos.getDownAverageSpeed())/2* 100.0)/ 100.0);
@@ -624,9 +633,9 @@ if (n > 0 && (endM - startM) > 0) {
             tos.setDownCount(xiaxing2);
 //            tos.setTrafficSaturation(Math.round(n / ((double) (endM - startM)) / ((double) (tt - st) / 60000) / ((double) 2200 / 60) * 100.0) / 100.0);
             tos.setVehicleDensity(chemidu);
-            tos.setTotalCongestionIndex(Math.round((sum / n / 120) * 1000.0) / 1000.0);
-            tos.setUpCongestionIndex(Math.round((shangxingSum / shangxing1 / 120) * 1000.0) / 1000.0);
-            tos.setDownCongestionIndex(Math.round((xiaxingSum / xiaxing2 / 120) * 1000.0) / 1000.0);
+            tos.setTotalCongestionIndex(Math.round((120 / (sum / n)) * 1000.0) / 1000.0);
+            tos.setUpCongestionIndex(Math.round((120 / (shangxingSum / shangxing1)) * 1000.0) / 1000.0);
+            tos.setDownCongestionIndex(Math.round((120/(xiaxingSum / xiaxing2)  ) * 1000.0) / 1000.0);
             tos.setUpBusCount(upkeche);
             tos.setUpTrackCount(uphuoche);
             tos.setUpChemicalCount(upweihuaping);
@@ -635,35 +644,119 @@ if (n > 0 && (endM - startM) > 0) {
             tos.setDownTrackCount(downhuoche);
             tos.setDownChemicalCount(downweihuaping);
             tos.setDownHeavyTrackCount(downzhongxinghuoche);
-            tos.setBusTrackVal(busTrackVal);
-            tos.setUpBusTrackVal(upbusTrackVal);
-            tos.setDownBusTrackVal(downbusTrackVal);
+            tos.setUpTruckVal(uptval);
+            tos.setUpBusVal(upbval);
+            tos.setDownBusVal(downbval);
+            tos.setDownTrackVal(downtval);
+            tos.setBusVal(bval);
+            tos.setTruckVal(tval);
+             double chemidu1 = Math.round(((double) shangxing1 / (endM - startM) *2* 100.0)) / 100.0;
+            double chemidu2 = Math.round(((double) xiaxing2 / (endM - startM) *2* 100.0)) / 100.0;
+            SaturationResult saturationResult1 = calculateSaturation(chemidu1);
+            SaturationResult saturationResult2 = calculateSaturation(chemidu2);
+            tos.setUpTrafficSaturation((Math.round(saturationResult1.saturation* 100.0)) / 100.0);
+            tos.setDownTrafficSaturation(Math.round((saturationResult2.saturation* 100.0)) / 100.0);
         } else main = false;
         System.out.println("n:"+n+" upkeche:"+upkeche+" uphuoche:"+uphuoche+" upweihuaping:"+upweihuaping);
         //endregion
+            SaturationResult saturationResult = calculateSaturation(tos.getVehicleDensity());
+
+
         //region Description
         if (main && za) {
-            tos.setZaTrafficSaturation( zaSau(2200*(tt - st) / 3600000.0,zn));
+                tos.setMainLOS(saturationResult.level);
+
+            tos.setZaTrafficSaturation( zaSau(2200*(tt - st) / 3600000.0*((double) zalen /1000),zn));
             // 四舍五入保留两位小数
-            tos.setTrafficSaturation(Math.round(getSau() * 100.0) / 100.0);
-            tos.setUpTrafficSaturation(Math.round(getSau(upkeche+uphuoche) * 100.0) / 100.0);
-            tos.setDownTrafficSaturation(Math.round(getSau(downkeche+downhuoche) * 100.0) / 100.0);
+//            tos.setTrafficSaturation(Math.round(saturationResult.saturation * 100.0) / 100.0);
+            tos.setTrafficSaturation(Math.round(saturationResult.saturation * 100.0) / 100.0);
             return new TimeSpatialResult(200, "内存查找————匝道、主路均有数据    查询用时：" + (System.currentTimeMillis() - t1) + "ms   查询时间段：" + convertFromTimestampMillis(st) + " to " + convertFromTimestampMillis(tt) + ",桩号：K" + startM + " to K" + endM + "  " + zadaoInfo + "   查询主路路段数：" + (endM - startM) + "   查询时段数：" + (tt - st) / 1000, tos, true);
         } else if (main && !za){
-            tos.setTrafficSaturation(Math.round(getSau() * 100.0) / 100.0);
-            tos.setUpTrafficSaturation(Math.round(getSau(upkeche+uphuoche) * 100.0) / 100.0);
-            tos.setDownTrafficSaturation(Math.round(getSau((downkeche+downhuoche)) * 100.0) / 100.0);
+                tos.setMainLOS(saturationResult.level);
+
+            tos.setTrafficSaturation(Math.round(saturationResult.saturation * 100.0) / 100.0);
 
             return new TimeSpatialResult(200, "内存查找————主路有数据,匝道无数据,查询用时：" + (System.currentTimeMillis() - t1) + "ms   查询时间段：" + convertFromTimestampMillis(st) + " to " + convertFromTimestampMillis(tt) + ",桩号：K" + startM + " to K" + endM + "   查询主路路段数：" + (endM - startM) + "   查询时段数：" + (tt - st) / 1000, tos, true);
         }
         else if (!main && za) {
-            tos.setZaTrafficSaturation( zaSau(2200*(tt - st) / 3600000.0,zn));
+            tos.setZaTrafficSaturation( zaSau(2200*(tt - st) / 3600000.0*((double) zalen /1000),zn));
 
             return new TimeSpatialResult(200, "内存查找————主路无数据,匝道有数据,查询用时：" + (System.currentTimeMillis() - t1) + "ms   查询时间段：" + convertFromTimestampMillis(st) + " to " + convertFromTimestampMillis(tt) + ",桩号：K" + startM + " to K" + endM + "  " + zadaoInfo + "   查询时段数：" + (tt - st) / 1000, tos, true);
         } else
             return new TimeSpatialResult(200, "内存查找————主路、匝道均无数据,查询用时：" + (System.currentTimeMillis() - t1) + "ms   查询时间段：" + convertFromTimestampMillis(st) + " to " + convertFromTimestampMillis(tt) + ",桩号：K" + startM + " to K" + endM + "  " + zadaoInfo, kong, true);
     }
+  public static double ms(double chengzai,double liuliang){
+        return liuliang/chengzai;
+    }
 
+        public static class SaturationResult {
+        private final String level;
+        private final double saturation;
+
+        public SaturationResult(String level, double saturation) {
+            this.level = level;
+            this.saturation = saturation;
+        }
+
+        public String getLevel() {
+            return level;
+        }
+
+        public double getSaturation() {
+            return saturation;
+        }
+
+        @Override
+        public String toString() {
+            return "Level: " + level + ", Saturation: " + String.format("%.2f", saturation);
+        }
+    }
+
+    /**
+     * 根据密度计算饱和度和等级
+     *
+     * @param density 密度值
+     * @return SaturationResult 包含等级和饱和度值的对象
+     */
+    public static SaturationResult calculateSaturation(double density) {
+        double saturation;
+        String level;
+
+        if (density < 10) {
+            // A级：饱和度在0-0.3之间线性变化
+            saturation = density / 10 * 0.3;
+            level = "A";
+        } else if (density < 16) {
+            // B级：饱和度在0.3-0.6之间线性变化
+            saturation = 0.3 + (density - 10) / (16 - 10) * (0.6 - 0.3);
+            level = "B";
+        } else if (density < 24) {
+            // C级：饱和度在0.5-0.7之间线性变化
+            saturation = 0.5 + (density - 16) / (24 - 16) * (0.7 - 0.5);
+            level = "C";
+        } else if (density < 35) {
+            // D级：饱和度在0.7-0.9之间线性变化
+            saturation = 0.7 + (density - 24) / (35 - 24) * (0.9 - 0.7);
+            level = "D";
+        } else if (density < 45) {
+            // E级：饱和度在0.9-1.0之间线性变化
+            saturation = 0.9 + (density - 35) / (45 - 35) * (1.0 - 0.9);
+            level = "E";
+        } else {
+            // F级：饱和度超过1.0，每增加1个密度单位增加0.05饱和度
+            saturation = 1.0 + (density - 45) * 0.05;
+            level = "F";
+        }
+
+        // 确保饱和度在合理范围内
+        saturation = Math.max(0, Math.min(saturation, 2.0)); // 最大饱和度限制为2.0
+ // 使用BigDecimal进行四舍五入并保留两位小数
+    BigDecimal bd = new BigDecimal(saturation);
+    bd = bd.setScale(2, RoundingMode.HALF_UP); // 四舍五入模式
+    double roundedSaturation = bd.doubleValue();
+
+    return new SaturationResult(level, roundedSaturation);
+    }
     public TimeSpatialResult getNewstRedis(Long current, Long startTime, Long endTime, String startMileage, String endMileage, Double Longitude1, Double Latitude1, Double Longitude2, Double Latitude2) throws IOException {
         long t1 = System.currentTimeMillis();
         //region Description
@@ -697,11 +790,13 @@ if (n > 0 && (endM - startM) > 0) {
         long tt = endTime / 1000 * 1000 + 1000;
         String zaStartMil = "";
         String zaEndMil = "";
-        TimeSpatialData kong = new TimeSpatialData(0, 0, 0,0,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,"0","0");
+        TimeSpatialData kong = new TimeSpatialData(0, 0, 0,0,0, 0,0,0,0,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,"0","0","0",0);
         TimeSpatialResult t2 = new TimeSpatialResult(200, "实时查找————无范围内数据,原因：桩号转换失败", kong, true);
         TimeSpatialData tos = new TimeSpatialData();
         boolean za = true;
         boolean main = true;
+        tos.setTodayTotal(getTodayTotalMemory(1L).getKey());
+
         StakeAssignment stakeAssign;
         int index;
         int index1;
@@ -1043,12 +1138,16 @@ if (n > 0 && (endM - startM) > 0) {
                 tos.setZaCount(zn);
                 tos.setZaTrafficSaturation(Math.round(zn / (zalen / 1000 + 1) / ((double) (tt - st) / 60000) / ((double) 2200 / 60) * 100.0) / 100.0);
                 tos.setZaVehicleDensity(chemidu);
-                tos.setZaCongestionIndex(Math.round((sum / n / 120) * 1000.0) / 1000.0);
+                tos.setZaCongestionIndex(Math.round((120 / (sum / n)) * 1000.0) / 1000.0);
                 tos.setZaBusCount(zupkeche);
                 tos.setZaTrackCount(zuphuoche);
                 tos.setZaChemicalCount(zupweihuaping);
                 tos.setZaHeavyTrackCount(zupzhongxinghuoche);
-                tos.setBusTrackVal(busTrackVal);
+                         double busval = Math.round((double) zupkeche / (zuphuoche+zupkeche) * 100.0) / 100.0;
+            double trackval =1-busval;
+
+            tos.setZaBusVal(busval);
+            tos.setZaTrackVal(trackval);
             } else {
                 za = false;
             }
@@ -1167,21 +1266,26 @@ if (n > 0 && (endM - startM) > 0) {
 
 //            System.out.println("timestamp: from " + st + "(" + startTime + ") to " + tt + "(" + endTime + ")  SkateID: from " + startMi + "(" + startMileage + ") to " + endMi + "(" + endMileage + ")");
             if (n != 0) {
-                double chemidu = Math.round(((double) m.size() / (endM - startM) * 100.0)) / 100.0;
-                double busTrackVal = Math.round((double) (downkeche + upkeche) / (uphuoche + downhuoche) * 100.0) / 100.0;
-                double upbusTrackVal = Math.round((double) (upkeche) / (uphuoche) * 100.0) / 100.0;
-                double downbusTrackVal = Math.round((double) (downkeche) / (downhuoche) * 100.0) / 100.0;
-                tos.setUpAverageSpeed(Math.round((shangxingSum / shangxing1 * 100.0)) / 100.0);
+            double chemidu = Math.round(((double) m.size() / (endM - startM) * 100.0)) / 100.0;
+            double upbval = Math.round((double) (upkeche) / (uphuoche+upkeche) * 100.0) / 100.0;
+            double downbval = Math.round((double) (downkeche) / (downhuoche+downkeche) * 100.0) / 100.0;
+            double uptval = 1-upbval;
+            double downtval = 1-downbval;
+            double bval = Math.round((double) (upkeche+downkeche) / (uphuoche+upkeche+downhuoche+downkeche) * 100.0) / 100.0;
+            double tval = 1-bval;
+            tos.setUpAverageSpeed(Math.round((shangxingSum / shangxing1 * 100.0)) / 100.0);
                 tos.setDownAverageSpeed(Math.round(xiaxingSum / xiaxing2 * 100.0) / 100.0);
                 tos.setTotalAverageSpeed(Math.round((tos.getUpAverageSpeed()+tos.getDownAverageSpeed())/2* 100.0)/ 100.0);
                 tos.setTotalCount((int) n);
+
+                cnum=(int)n;
                 tos.setUpCount(shangxing1);
                 tos.setDownCount(xiaxing2);
 //                tos.setTrafficSaturation(Math.round(n / ((double) (endM - startM)) / ((double) (tt - st) / 60000) / ((double) 2200 / 60) * 100.0) / 100.0);
                 tos.setVehicleDensity(chemidu);
-                tos.setTotalCongestionIndex(Math.round((sum / n / 120) * 1000.0) / 1000.0);
-                tos.setUpCongestionIndex(Math.round((shangxingSum / shangxing1 / 120) * 1000.0) / 1000.0);
-                tos.setDownCongestionIndex(Math.round((xiaxingSum / xiaxing2 / 120) * 1000.0) / 1000.0);
+                tos.setTotalCongestionIndex(Math.round((120 / (sum / n)) * 1000.0) / 1000.0);
+                tos.setUpCongestionIndex(Math.round((120 / (shangxingSum / shangxing1)) * 1000.0) / 1000.0);
+                tos.setDownCongestionIndex(Math.round((120/(xiaxingSum / xiaxing2)  ) * 1000.0) / 1000.0);
                 tos.setUpBusCount(upkeche);
                 tos.setUpTrackCount(uphuoche);
                 tos.setUpChemicalCount(upweihuaping);
@@ -1190,30 +1294,41 @@ if (n > 0 && (endM - startM) > 0) {
                 tos.setDownTrackCount(downhuoche);
                 tos.setDownChemicalCount(downweihuaping);
                 tos.setDownHeavyTrackCount(downzhongxinghuoche);
-                tos.setBusTrackVal(busTrackVal);
-                tos.setUpBusTrackVal(upbusTrackVal);
-                tos.setDownBusTrackVal(downbusTrackVal);
+          tos.setUpTruckVal(uptval);
+            tos.setUpBusVal(upbval);
+            tos.setDownBusVal(downbval);
+            tos.setDownTrackVal(downtval);
+            tos.setBusVal(bval);
+            tos.setTruckVal(tval);
+                double chemidu1 = Math.round(((double) shangxing1 / (endM - startM)*2 * 100.0)) / 100.0;
+            double chemidu2 = Math.round(((double) xiaxing2 / (endM - startM) *2* 100.0)) / 100.0;
+            SaturationResult saturationResult1 = calculateSaturation(chemidu1);
+            SaturationResult saturationResult2 = calculateSaturation(chemidu2);
+           tos.setUpTrafficSaturation((Math.round(saturationResult1.saturation* 100.0)) / 100.0);
+            tos.setDownTrafficSaturation(Math.round((saturationResult2.saturation* 100.0)) / 100.0);
             } else main = false;
-
+            SaturationResult saturationResult = calculateSaturation(tos.getVehicleDensity());
             long timeWindow = (tt - st);          // 时间窗口（毫秒）
             double minutes = timeWindow / 60000.0; // 转换为分钟
-            if (main && za) {
-              tos.setZaTrafficSaturation( zaSau(2200*(tt - st) / 3600000.0,zn));
-            tos.setTrafficSaturation(Math.round(getSau() * 100.0) / 100.0);
- tos.setUpTrafficSaturation(Math.round(getSau(upkeche+uphuoche) * 100.0) / 100.0);
-            tos.setDownTrafficSaturation(Math.round(getSau((downkeche+downhuoche)) * 100.0) / 100.0);
+
+
+        //region Description
+        if (main && za) {
+                tos.setMainLOS(saturationResult.level);
+
+              tos.setZaTrafficSaturation( zaSau(2200*(tt - st) / 3600000.0*((double) zalen /1000),zn));
+            tos.setTrafficSaturation(Math.round(saturationResult.saturation * 100.0) / 100.0);
 
                 return new TimeSpatialResult(200, "实时查找————匝道、主路均有数据    查询用时：" + (System.currentTimeMillis() - t1) + "ms   查询时间段：" + convertFromTimestampMillis(st) + " to " + convertFromTimestampMillis(tt) + ",桩号：K" + startM + " to K" + endM + "  " + zadaoInfo + "   查询主路路段数：" + (endM - startM) + "   查询时段数：" + (tt - st) / 1000, tos, true);
             } else if (main && !za)
             {
-            tos.setTrafficSaturation(Math.round(getSau() * 100.0) / 100.0);
- tos.setUpTrafficSaturation(Math.round(getSau(upkeche+uphuoche) * 100.0) / 100.0);
-            tos.setDownTrafficSaturation(Math.round(getSau((downkeche+downhuoche)) * 100.0) / 100.0);
+                tos.setMainLOS(saturationResult.level);
+            tos.setTrafficSaturation(Math.round(saturationResult.saturation * 100.0) / 100.0);
 
                 return new TimeSpatialResult(200, "实时查找————主路有数据,匝道无数据,查询用时：" + (System.currentTimeMillis() - t1) + "ms   查询时间段：" + convertFromTimestampMillis(st) + " to " + convertFromTimestampMillis(tt) + ",桩号：K" + startM + " to K" + endM + "   查询主路路段数：" + (endM - startM) + "   查询时段数：" + (tt - st) / 1000, tos, true);
             }
             else if (!main && za) {
-              tos.setZaTrafficSaturation( zaSau(2200*(tt - st) / 3600000.0,zn));
+              tos.setZaTrafficSaturation( zaSau(2200*(tt - st) / 3600000.0*((double) zalen /1000),zn));
 
                 return new TimeSpatialResult(200, "实时查找————主路无数据,匝道有数据,查询用时：" + (System.currentTimeMillis() - t1) + "ms   查询时间段：" + convertFromTimestampMillis(st) + " to " + convertFromTimestampMillis(tt) + ",桩号：K" + startM + " to K" + endM + "  " + zadaoInfo + "   查询时段数：" + (tt - st) / 1000, tos, true);
             } else
@@ -1259,7 +1374,7 @@ if (n > 0 && (endM - startM) > 0) {
         long tt = endTime / 1000 * 1000 + 1000;
         String zaStartMil = "";
         String zaEndMil = "";
-        TimeSpatialData kong = new TimeSpatialData(0, 0, 0, 0, 0, 0, 0, 0,0, 0, 0, 0, 0, 0, 0,0,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,"0","0");
+        TimeSpatialData kong = new TimeSpatialData(0, 0, 0,0,0, 0, 0, 0, 0, 0, 0, 0,0, 0, 0, 0, 0, 0, 0,0,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,"0","0","0",0);
         TimeSpatialResult t2 = new TimeSpatialResult(200, "内存查找————无范围内数据,原因：桩号转换失败", kong, true);
         TimeSpatialData tos = new TimeSpatialData();
         boolean za = true;
@@ -1313,7 +1428,7 @@ if (n > 0 && (endM - startM) > 0) {
             tt = endTime / 60000 * 60000 + 60000;
             zaStartMil = "";
             zaEndMil = "";
-            kong = new TimeSpatialData(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,0,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,"0","0");
+            kong = new TimeSpatialData(0, 0, 0,0,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,0,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,"0","0","0",0);
             t2 = new TimeSpatialResult(200, "8001————无范围内数据,原因：桩号转换失败", kong, true);
             tos = new TimeSpatialData();
             za = true;
@@ -1611,12 +1726,16 @@ Map<String, HBaseTableScanner.KeyRange> scanPlan = HBaseTableScanner.generateSca
                 tos.setZaCount(zn);
                 tos.setZaTrafficSaturation(Math.round(zn / (zalen / 1000 + 1) / ((double) (tt - st) / 60000) / ((double) 2200 / 60) * 100.0) / 100.0);
                 tos.setZaVehicleDensity(chemidu);
-                tos.setZaCongestionIndex(Math.round((sum / n / 120) * 1000.0) / 1000.0);
+                tos.setZaCongestionIndex(Math.round((120 / (sum / n)) * 1000.0) / 1000.0);
                 tos.setZaBusCount(zupkeche);
                 tos.setZaTrackCount(zuphuoche);
                 tos.setZaChemicalCount(zupweihuaping);
                 tos.setZaHeavyTrackCount(zupzhongxinghuoche);
-                tos.setBusTrackVal(busTrackVal);
+                         double busval = Math.round((double) zupkeche / (zuphuoche+zupkeche) * 100.0) / 100.0;
+            double trackval = 1-busval;
+
+   tos.setZaBusVal(busval);
+            tos.setZaTrackVal(trackval);
             } else {
                 za = false;
             }
@@ -1688,7 +1807,7 @@ Map<String, HBaseTableScanner.KeyRange> scanPlan = HBaseTableScanner.generateSca
             });
             for (Map.Entry<Long, hbaseVe.VehicleSeg> entry : m.entrySet()) {
                 hbaseVe.VehicleSeg v = entry.getValue();
-                System.out.println(v);
+//                System.out.println(v);
                 if (v != null) {
                     n++;
                     sum += v.getAveSpeed();
@@ -1770,9 +1889,9 @@ Map<String, HBaseTableScanner.KeyRange> scanPlan = HBaseTableScanner.generateSca
                 tos.setDownCount(xiaxing2);
 //                tos.setTrafficSaturation(Math.round(n / ((double) (endM - startM)) / ((double) (tt - st) / 60000) / ((double) 2200 / 60) * 100.0) / 100.0);
                 tos.setVehicleDensity(chemidu);
-                tos.setTotalCongestionIndex(Math.round((sum / n / 120) * 1000.0) / 1000.0);
-                tos.setUpCongestionIndex(Math.round((shangxingSum / shangxing1 / 120) * 1000.0) / 1000.0);
-                tos.setDownCongestionIndex(Math.round((xiaxingSum / xiaxing2 / 120) * 1000.0) / 1000.0);
+                tos.setTotalCongestionIndex(Math.round((120 / (sum / n)) * 1000.0) / 1000.0);
+                tos.setUpCongestionIndex(Math.round((120 / (shangxingSum / shangxing1)) * 1000.0) / 1000.0);
+                tos.setDownCongestionIndex(Math.round((120/(xiaxingSum / xiaxing2)  ) * 1000.0) / 1000.0);
                 tos.setUpBusCount(upkeche);
                 tos.setUpTrackCount(uphuoche);
                 tos.setUpChemicalCount(upweihuaping);
@@ -1781,29 +1900,46 @@ Map<String, HBaseTableScanner.KeyRange> scanPlan = HBaseTableScanner.generateSca
                 tos.setDownTrackCount(downhuoche);
                 tos.setDownChemicalCount(downweihuaping);
                 tos.setDownHeavyTrackCount(downzhongxinghuoche);
-                tos.setBusTrackVal(busTrackVal);
-                tos.setUpBusTrackVal(upbusTrackVal);
-                tos.setDownBusTrackVal(downbusTrackVal);
+        double upbval = Math.round((double) (upkeche) / (uphuoche+upkeche) * 100.0) / 100.0;
+            double downbval = Math.round((double) (downkeche) / (downhuoche+downkeche) * 100.0) / 100.0;
+            double uptval = 1-upbval;
+            double downtval = 1-downbval;
+            double bval = Math.round((double) (upkeche+downkeche) / (uphuoche+upkeche+downhuoche+downkeche) * 100.0) / 100.0;
+            double tval = 1-bval;
+          tos.setUpTruckVal(uptval);
+            tos.setUpBusVal(upbval);
+            tos.setDownBusVal(downbval);
+            tos.setDownTrackVal(downtval);
+            tos.setBusVal(bval);
+            tos.setTruckVal(tval);
+                double chemidu1 = Math.round(((double) shangxing1 / (endM - startM) *2* 100.0)) / 100.0;
+            double chemidu2 = Math.round(((double) xiaxing2 / (endM - startM) *2* 100.0)) / 100.0;
+            SaturationResult saturationResult1 = calculateSaturation(chemidu1);
+            SaturationResult saturationResult2 = calculateSaturation(chemidu2);
+            tos.setUpTrafficSaturation((Math.round(saturationResult1.saturation* 100.0)) / 100.0);
+            tos.setDownTrafficSaturation(Math.round((saturationResult2.saturation* 100.0)) / 100.0);
             } else {
                 main = false;
             }
             long timeWindow = (tt - st);          // 时间窗口（毫秒）
             double minutes = timeWindow / 60000.0; // 转换为分钟
-            if (main && za) {
-                tos.setTrafficSaturation(Math.round(getSau() * 100.0) / 100.0);
-                tos.setZaTrafficSaturation( zaSau(2200*(tt - st) / 3600000.0,zn));
- tos.setUpTrafficSaturation(Math.round(getSau(upkeche+uphuoche) * 100.0) / 100.0);
-            tos.setDownTrafficSaturation(Math.round(getSau(downkeche+downhuoche) * 100.0) / 100.0);
+            SaturationResult saturationResult = calculateSaturation(tos.getVehicleDensity());
+
+        
+        //region Description
+        if (main && za) {
+                tos.setMainLOS(saturationResult.level);
+
+                tos.setTrafficSaturation(Math.round(saturationResult.saturation * 100.0) / 100.0);
 
                 return new TimeSpatialResult(200, "数据库查找————匝道、主路均有数据,查询用时：" + (System.currentTimeMillis() - t1) + "ms   查询时间段：" + convertFromTimestampMillis(st) + " to " + convertFromTimestampMillis(tt) + ",桩号：K" + startM + " to K" + endM + "  " + zadaoInfo + "   查询主路路段数：" + (endM - startM) + "   查询时段数：" + (tt - st) / 60000, tos, true);
             } else if (main && !za) {
-                tos.setTrafficSaturation(Math.round(getSau() * 100.0) / 100.0);
- tos.setUpTrafficSaturation(Math.round(getSau(upkeche+uphuoche) * 100.0) / 100.0);
-            tos.setDownTrafficSaturation(Math.round(getSau(downkeche+downhuoche) * 100.0) / 100.0);
+                tos.setMainLOS(saturationResult.level);
+                tos.setTrafficSaturation(Math.round(saturationResult.saturation * 100.0) / 100.0);
 
                 return new TimeSpatialResult(200, "数据库查找————主路有数据,匝道无数据,查询用时：" + (System.currentTimeMillis() - t1) + "ms   查询时间段：" + convertFromTimestampMillis(st) + " to " + convertFromTimestampMillis(tt) + ",桩号：K" + startM + " to K" + endM + "   查询主路路段数：" + (endM - startM) + "   查询时段数：" + (tt - st) / 60000, tos, true);
             }else if (!main && za) {
-                tos.setZaTrafficSaturation( zaSau(2200*(tt - st) / 3600000.0,zn));
+                tos.setZaTrafficSaturation( zaSau(2200*(tt - st) / 3600000.0*((double) zalen /1000),zn));
 
                 return new TimeSpatialResult(200, "数据库查找————主路无数据,匝道有数据,查询用时：" + (System.currentTimeMillis() - t1) + "ms   查询时间段：" + convertFromTimestampMillis(st) + " to " + convertFromTimestampMillis(tt) + ",桩号：K" + startM + " to K" + endM + "  " + zadaoInfo, kong, true);
             } else
@@ -1812,104 +1948,107 @@ Map<String, HBaseTableScanner.KeyRange> scanPlan = HBaseTableScanner.generateSca
     }
 
     @Override
-    public TimeSpatialResult getByTimeSpatial(Long startTime, Long endTime, String startMileage, String endMileage, Double Longitude1, Double Latitude1, Double Longitude2, Double Latitude2) throws IOException {
+    public TimeSpatialResult getByTimeSpatial(Long startTime, Long endTime, String startMileage, String endMileage, Double Longitude1, Double Latitude1, Double Longitude2, Double Latitude2,Integer c) throws IOException {
         long currentTime = System.currentTimeMillis();
-        long timeSplit = (currentTime - 120000) / 10000 * 10000;
         System.out.println("startTime-currentTime:" + abs(startTime - currentTime));
         System.out.println("startTime："+startTime);
         System.out.println("currentTime："+currentTime);
-        if (abs(startTime - currentTime) < 20000) {
-            return getNewstRedis(currentTime, startTime, endTime, startMileage, endMileage, Longitude1, Latitude1, Longitude2, Latitude2);
-        }
-        if (startTime > timeSplit) {
-            return getHbase(startTime, endTime, startMileage, endMileage, Longitude1, Latitude1, Longitude2, Latitude2);
-        } else if (endTime > timeSplit & startTime < timeSplit) {
-            return new TimeSpatialResult(200, "内存、数据库同时查询", mergeRH(getRedis(timeSplit, endTime, startMileage, endMileage, Longitude1, Latitude1, Longitude2, Latitude2).getData(), getHbase(startTime, timeSplit, startMileage, endMileage, Longitude1, Latitude1, Longitude2, Latitude2).getData()), true);
-        } else if (endTime < timeSplit) {
-            return getNewstRedis(startTime,startTime, endTime, startMileage, endMileage, Longitude1, Latitude1, Longitude2, Latitude2);
-        }
-        return new TimeSpatialResult(200, "起始时间必须大于终止时间", null, true);
+        if(c==2)return getHbase( startTime, endTime, startMileage, endMileage, Longitude1, Latitude1, Longitude2, Latitude2);
+        else return getNewstRedis(currentTime, startTime, endTime, startMileage, endMileage, Longitude1, Latitude1, Longitude2, Latitude2);
+//        if (abs(startTime - currentTime) < 20000) {
+//            return getNewstRedis(currentTime, startTime, endTime, startMileage, endMileage, Longitude1, Latitude1, Longitude2, Latitude2);
+//        }
+//        if (startTime > timeSplit) {
+//            return getNewstRedis(currentTime,startTime, endTime, startMileage, endMileage, Longitude1, Latitude1, Longitude2, Latitude2);
+//        } else if (endTime > timeSplit & startTime < timeSplit) {
+//            return getNewstRedis(currentTime,startTime, endTime, startMileage, endMileage, Longitude1, Latitude1, Longitude2, Latitude2);
+////            return new TimeSpatialResult(200, "内存、数据库同时查询", mergeRH(getRedis(timeSplit, endTime, startMileage, endMileage, Longitude1, Latitude1, Longitude2, Latitude2).getData(), getHbase(startTime, timeSplit, startMileage, endMileage, Longitude1, Latitude1, Longitude2, Latitude2).getData()), true);
+//        } else if (endTime < timeSplit) {
+//            return getNewstRedis(startTime,startTime, endTime, startMileage, endMileage, Longitude1, Latitude1, Longitude2, Latitude2);
+//        }
+////        return new TimeSpatialResult(200, "起始时间必须大于终止时间", null, true);
+//        return getNewstRedis(startTime,startTime, endTime, startMileage, endMileage, Longitude1, Latitude1, Longitude2, Latitude2);
     }
 
-    public static TimeSpatialData mergeRH(TimeSpatialData d1, TimeSpatialData d2) {
-        TimeSpatialData merged = new TimeSpatialData();
-
-        // 合并计数类字段（直接相加）
-        merged.setTotalCount(d1.getTotalCount() + d2.getTotalCount());
-        merged.setUpCount(d1.getUpCount() + d2.getUpCount());
-        merged.setDownCount(d1.getDownCount() + d2.getDownCount());
-
-        merged.setUpBusCount(d1.getUpBusCount() + d2.getUpBusCount());
-        merged.setUpTrackCount(d1.getUpTrackCount() + d2.getUpTrackCount());
-        merged.setUpChemicalCount(d1.getUpChemicalCount() + d2.getUpChemicalCount());
-        merged.setUpHeavyTrackCount(d1.getUpHeavyTrackCount() + d2.getUpHeavyTrackCount());
-
-        merged.setDownBusCount(d1.getDownBusCount() + d2.getDownBusCount());
-        merged.setDownTrackCount(d1.getDownTrackCount() + d2.getDownTrackCount());
-        merged.setDownChemicalCount(d1.getDownChemicalCount() + d2.getDownChemicalCount());
-        merged.setDownHeavyTrackCount(d1.getDownHeavyTrackCount() + d2.getDownHeavyTrackCount());
-
-        // 匝道计数类字段（直接相加）
-        merged.setZaBusCount(d1.getZaBusCount() + d2.getZaBusCount());
-        merged.setZaTrackCount(d1.getZaTrackCount() + d2.getZaTrackCount());
-        merged.setZaChemicalCount(d1.getZaChemicalCount() + d2.getZaChemicalCount());
-        merged.setZaHeavyTrackCount(d1.getZaHeavyTrackCount() + d2.getZaHeavyTrackCount());
-
-        // 平均速度（加权平均）
-        merged.setTotalAverageSpeed(calculateWeightedAverage(
-                d1.getTotalAverageSpeed(), d1.getTotalCount(),
-                d2.getTotalAverageSpeed(), d2.getTotalCount()
-        ));
-        merged.setUpAverageSpeed(calculateWeightedAverage(
-                d1.getUpAverageSpeed(), d1.getUpCount(),
-                d2.getUpAverageSpeed(), d2.getUpCount()
-        ));
-        merged.setDownAverageSpeed(calculateWeightedAverage(
-                d1.getDownAverageSpeed(), d1.getDownCount(),
-                d2.getDownAverageSpeed(), d2.getDownCount()
-        ));
-
-        // 匝道平均速度（加权平均）
-        merged.setZaAverageSpeed(calculateWeightedAverage(
-                d1.getZaAverageSpeed(), (int) d1.getZaCount(),
-                d2.getZaAverageSpeed(), (int) d2.getZaCount()
-        ));
-
-        // 交通指标（简单平均，实际需根据业务逻辑调整）
-        merged.setTrafficSaturation((d1.getTrafficSaturation() + d2.getTrafficSaturation()) / 2);
-        merged.setVehicleDensity((d1.getVehicleDensity() + d2.getVehicleDensity()) / 2);
-merged.setUpTrafficSaturation((d1.getUpTrafficSaturation() + d2.getUpTrafficSaturation())/2);
-merged.setDownTrafficSaturation((d1.getDownTrafficSaturation() + d2.getDownTrafficSaturation())/2);
-        // 拥塞指数（简单平均）
-        merged.setTotalCongestionIndex((d1.getTotalCongestionIndex() + d2.getTotalCongestionIndex()) / 2);
-        merged.setUpCongestionIndex((d1.getUpCongestionIndex() + d2.getUpCongestionIndex()) / 2);
-        merged.setDownCongestionIndex((d1.getDownCongestionIndex() + d2.getDownCongestionIndex()) / 2);
-
-        // 客货比（重新计算）
-        merged.setBusTrackVal(calculateRatio(
-                merged.getUpBusCount() + merged.getDownBusCount(),
-                merged.getUpTrackCount() + merged.getDownTrackCount()
-        ));
-        merged.setUpBusTrackVal(calculateRatio(
-                merged.getUpBusCount(),
-                merged.getUpTrackCount()
-        ));
-        merged.setDownBusTrackVal(calculateRatio(
-                merged.getDownBusCount(),
-                merged.getDownTrackCount()
-        ));
-
-        // 匝道交通指标（简单平均）
-        merged.setZaTrafficSaturation((d1.getZaTrafficSaturation() + d2.getZaTrafficSaturation()) / 2);
-        merged.setZaVehicleDensity((d1.getZaVehicleDensity() + d2.getZaVehicleDensity()) / 2);
-        merged.setZaCongestionIndex((d1.getZaCongestionIndex() + d2.getZaCongestionIndex()) / 2);
-        merged.setZaBusTrackVal(calculateRatio(
-                merged.getZaBusCount(),
-                merged.getZaTrackCount()
-        ));
-
-        return merged;
-    }
+//    public static TimeSpatialData mergeRH(TimeSpatialData d1, TimeSpatialData d2) {
+//        TimeSpatialData merged = new TimeSpatialData();
+//
+//        // 合并计数类字段（直接相加）
+//        merged.setTotalCount(d1.getTotalCount() + d2.getTotalCount());
+//        merged.setUpCount(d1.getUpCount() + d2.getUpCount());
+//        merged.setDownCount(d1.getDownCount() + d2.getDownCount());
+//
+//        merged.setUpBusCount(d1.getUpBusCount() + d2.getUpBusCount());
+//        merged.setUpTrackCount(d1.getUpTrackCount() + d2.getUpTrackCount());
+//        merged.setUpChemicalCount(d1.getUpChemicalCount() + d2.getUpChemicalCount());
+//        merged.setUpHeavyTrackCount(d1.getUpHeavyTrackCount() + d2.getUpHeavyTrackCount());
+//
+//        merged.setDownBusCount(d1.getDownBusCount() + d2.getDownBusCount());
+//        merged.setDownTrackCount(d1.getDownTrackCount() + d2.getDownTrackCount());
+//        merged.setDownChemicalCount(d1.getDownChemicalCount() + d2.getDownChemicalCount());
+//        merged.setDownHeavyTrackCount(d1.getDownHeavyTrackCount() + d2.getDownHeavyTrackCount());
+//
+//        // 匝道计数类字段（直接相加）
+//        merged.setZaBusCount(d1.getZaBusCount() + d2.getZaBusCount());
+//        merged.setZaTrackCount(d1.getZaTrackCount() + d2.getZaTrackCount());
+//        merged.setZaChemicalCount(d1.getZaChemicalCount() + d2.getZaChemicalCount());
+//        merged.setZaHeavyTrackCount(d1.getZaHeavyTrackCount() + d2.getZaHeavyTrackCount());
+//
+//        // 平均速度（加权平均）
+//        merged.setTotalAverageSpeed(calculateWeightedAverage(
+//                d1.getTotalAverageSpeed(), d1.getTotalCount(),
+//                d2.getTotalAverageSpeed(), d2.getTotalCount()
+//        ));
+//        merged.setUpAverageSpeed(calculateWeightedAverage(
+//                d1.getUpAverageSpeed(), d1.getUpCount(),
+//                d2.getUpAverageSpeed(), d2.getUpCount()
+//        ));
+//        merged.setDownAverageSpeed(calculateWeightedAverage(
+//                d1.getDownAverageSpeed(), d1.getDownCount(),
+//                d2.getDownAverageSpeed(), d2.getDownCount()
+//        ));
+//
+//        // 匝道平均速度（加权平均）
+//        merged.setZaAverageSpeed(calculateWeightedAverage(
+//                d1.getZaAverageSpeed(), (int) d1.getZaCount(),
+//                d2.getZaAverageSpeed(), (int) d2.getZaCount()
+//        ));
+//
+//        // 交通指标（简单平均，实际需根据业务逻辑调整）
+//        merged.setTrafficSaturation((d1.getTrafficSaturation() + d2.getTrafficSaturation()) / 2);
+//        merged.setVehicleDensity((d1.getVehicleDensity() + d2.getVehicleDensity()) / 2);
+//merged.setUpTrafficSaturation((d1.getUpTrafficSaturation() + d2.getUpTrafficSaturation())/2);
+//merged.setDownTrafficSaturation((d1.getDownTrafficSaturation() + d2.getDownTrafficSaturation())/2);
+//        // 拥塞指数（简单平均）
+//        merged.setTotalCongestionIndex((d1.getTotalCongestionIndex() + d2.getTotalCongestionIndex()) / 2);
+//        merged.setUpCongestionIndex((d1.getUpCongestionIndex() + d2.getUpCongestionIndex()) / 2);
+//        merged.setDownCongestionIndex((d1.getDownCongestionIndex() + d2.getDownCongestionIndex()) / 2);
+//
+//        // 客货比（重新计算）
+//        merged.setBusTrackVal(calculateRatio(
+//                merged.getUpBusCount() + merged.getDownBusCount(),
+//                merged.getUpTrackCount() + merged.getDownTrackCount()
+//        ));
+//        merged.setUpBusTrackVal(calculateRatio(
+//                merged.getUpBusCount(),
+//                merged.getUpTrackCount()
+//        ));
+//        merged.setDownBusTrackVal(calculateRatio(
+//                merged.getDownBusCount(),
+//                merged.getDownTrackCount()
+//        ));
+//
+//        // 匝道交通指标（简单平均）
+//        merged.setZaTrafficSaturation((d1.getZaTrafficSaturation() + d2.getZaTrafficSaturation()) / 2);
+//        merged.setZaVehicleDensity((d1.getZaVehicleDensity() + d2.getZaVehicleDensity()) / 2);
+//        merged.setZaCongestionIndex((d1.getZaCongestionIndex() + d2.getZaCongestionIndex()) / 2);
+//        merged.setZaBusTrackVal(calculateRatio(
+//                merged.getZaBusCount(),
+//                merged.getZaTrackCount()
+//        ));
+//
+//        return merged;
+//    }
 
     // 计算加权平均值
     private static double calculateWeightedAverage(double avg1, int count1, double avg2, int count2) {
@@ -1964,11 +2103,10 @@ public static double zaSau(double zaCapacity,double zn){
 // 防止除零错误
 if (zaCapacity < 1) zaCapacity = 1;
 
-// 实际匝道交通量
-double zaActualFlow = zn;
+
 
 // 计算饱和度并限制在0-1之间
-double zaTrafficSaturation = zaActualFlow / zaCapacity;
+double zaTrafficSaturation = zn / zaCapacity;
 zaTrafficSaturation = Math.min(1.0, Math.max(0, zaTrafficSaturation));
 return Math.round(zaTrafficSaturation * 100.0) / 100.0;
 
@@ -2154,44 +2292,44 @@ List<SectionalFlowPiece> staList2 = new ArrayList<>();
 List<SectionalFlowDat> lsec = new ArrayList<>();
 int totalSum1 = 0;
 int totalSum2 = 0;
-
+ double factor= (double) ((endM - startM) + 77) /78;
 for (Map.Entry<String, HBaseTableScanner.KeyRange> entry : scanPlan.entrySet()) {
     if(level == 1) {
         int jcount = 0;
         int sum1 = 0;
         int sum2 = 0;
-        
+
         for(long j = thinTime; j < endThinTime; j += 60000) {
             jcount++;
             List<Integer> vehicleCountByDirection = getVehicleCountByDirection(entry.getKey(), j, j + 60000, startM, endM);
-            
+
             // 如果是第一个表，初始化数据结构
             if(staList1.size() < jcount) {
                 staList1.add(new SectionalFlowPiece(jcount, 0, 0, 0));
                 staList2.add(new SectionalFlowPiece(jcount, 0, 0, 0));
             }
-            
+
             // 累加到现有数据结构
             SectionalFlowPiece upPiece = staList1.get(jcount-1);
             SectionalFlowPiece downPiece = staList2.get(jcount-1);
-            
-            upPiece.setTotal(upPiece.getTotal() + vehicleCountByDirection.get(0));
-            upPiece.setMinibus(upPiece.getMinibus() + vehicleCountByDirection.get(1));
-            upPiece.setTruck(upPiece.getTruck() + vehicleCountByDirection.get(2));
-            
-            downPiece.setTotal(downPiece.getTotal() + vehicleCountByDirection.get(3));
-            downPiece.setMinibus(downPiece.getMinibus() + vehicleCountByDirection.get(4));
-            downPiece.setTruck(downPiece.getTruck() + vehicleCountByDirection.get(5));
-            
-            sum1 += vehicleCountByDirection.get(0);
-            sum2 += vehicleCountByDirection.get(3);
+
+            upPiece.setTotal((int) ((upPiece.getTotal() + vehicleCountByDirection.get(0))/factor));
+            upPiece.setMinibus((int) ((upPiece.getMinibus() + vehicleCountByDirection.get(1))/factor));
+            upPiece.setTruck(upPiece.getTotal()-upPiece.getMinibus());
+
+            downPiece.setTotal((int) (downPiece.getTotal() + vehicleCountByDirection.get(3)/factor));
+            downPiece.setMinibus((int) (downPiece.getMinibus() + vehicleCountByDirection.get(4)/factor));
+            downPiece.setTruck(downPiece.getTotal()-downPiece.getMinibus());
+
+            sum1 += upPiece.getTotal();
+            sum2 += downPiece.getTotal();
         }
-        
+
         totalSum1 += sum1;
         totalSum2 += sum2;
     }
     else if(level == 2) {
-        Pair<List<List<Integer>>, List<String>> trafficStatsByStake = queryTrafficStats("traffic_stats_by_stake", startTime, endTime, startM, endM);
+        Pair<List<List<Integer>>, List<String>> trafficStatsByStake = queryTrafficStats("traffic_stats_by_section", startTime, endTime, startM, endM);
         int i = 0;
         int sum1 = 0;
         int sum2 = 0;
@@ -2225,7 +2363,7 @@ for (Map.Entry<String, HBaseTableScanner.KeyRange> entry : scanPlan.entrySet()) 
         totalSum2 += sum2;
     }
     else if(level == 3) {
-        Pair<List<List<Integer>>, List<String>> trafficStatsByStake = queryTrafficStats("traffic_stats_by_stake", startTime, endTime, startM, endM);
+        Pair<List<List<Integer>>, List<String>> trafficStatsByStake = queryTrafficStats("traffic_stats_by_section", startTime, endTime, startM, endM);
         List<List<Integer>> lists = aggregateDailyStats(trafficStatsByStake.getKey(), trafficStatsByStake.getValue());
         int i = 0;
         int sum1 = 0;
@@ -2274,6 +2412,7 @@ if(level == 1 || level == 2 || level == 3) {
 }
 else {
     lsec.add(new SectionalFlowDat(1, totalSum1, null));
+    lsec.add(new SectionalFlowDat(2, totalSum2, null));
     return new SectionalFlowData(lsec, inputParams);
 }
 
@@ -2293,6 +2432,7 @@ else {
     }
     @Override
     public jizhanResult getStFlow(String stId, Long startTime, Long endTime) throws IOException {
+        long time=System.currentTimeMillis();
         long st=startTime/3600000*3600000;
         long tt=endTime/3600000*3600000+3600000;
         List<String>l=new ArrayList<>();
@@ -2302,8 +2442,9 @@ else {
         int[] data=getOne(l);
 
         jizhanUpDownCountData jizhanUpDownCountData=new jizhanUpDownCountData(data[0],data[1]);
+        long time1=System.currentTimeMillis();
 
-        return new jizhanResult(200,"查询成功",jizhanUpDownCountData,true);
+        return new jizhanResult(200,"查询成功",jizhanUpDownCountData,true,time1-time);
     }
 
     //http://100.65.38.139:8080/getByLongLati?startTime=1743158735648&endTime=1743158735690&Longitude1=114.04516&Latitude1=30.916416&Longitude2=114.045304&Latitude2=30.916420

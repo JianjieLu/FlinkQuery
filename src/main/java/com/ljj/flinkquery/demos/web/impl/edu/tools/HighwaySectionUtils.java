@@ -1,4 +1,5 @@
 package com.ljj.flinkquery.demos.web.impl.edu.tools;
+import com.ljj.flinkquery.demos.entity.watch.sectionStartEndStake;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -36,7 +37,34 @@ public class HighwaySectionUtils {
      * @param endStake 终点桩号，格式如 "K1235+020"
      * @return 经过的路段列表，每个元素为 "起点名称-终点名称" 格式
      */
-    public static List<String> getPassedSections(String startStake, String endStake) {
+    public static List<sectionStartEndStake> getPassedSectionStartEndStake(String startStake, String endStake) {
+        List<sectionStartEndStake> passedSections = new ArrayList<>();
+
+        // 转换桩号为数字
+        int startNum = stakeToNumber(startStake);
+        int endNum = stakeToNumber(endStake);
+
+        // 确保起点小于终点
+        if (startNum > endNum) {
+            int temp = startNum;
+            startNum = endNum;
+            endNum = temp;
+        }
+
+        // 检查每个路段是否与给定区间有重叠
+        for (HighwaySection section : SECTIONS) {
+            int sectionStart = stakeToNumber(section.startStake);
+            int sectionEnd = stakeToNumber(section.endStake);
+
+            // 判断两个区间是否有重叠
+            if (!(endNum < sectionStart || startNum > sectionEnd)) {
+                passedSections.add(new sectionStartEndStake(section.startName + "-" + section.endName,stakeToNumber4(section.startStake),stakeToNumber4(section.endStake)));
+            }
+        }
+
+        return passedSections;
+    }
+public static List<String> getPassedSections(String startStake, String endStake) {
         List<String> passedSections = new ArrayList<>();
 
         // 转换桩号为数字
@@ -63,7 +91,6 @@ public class HighwaySectionUtils {
 
         return passedSections;
     }
-
     /**
      * 获取所有路段的起始结束桩号列表
      *
@@ -98,6 +125,16 @@ public class HighwaySectionUtils {
         int meters = parts.length > 1 ? Integer.parseInt(parts[1]) : 0;
 
         return kilometers * 1000 + meters;
+    }
+       private static int stakeToNumber4(String stakeStr) {
+        // 移除'K'和'+'，然后分割公里和米部分
+        String cleaned = stakeStr.replace("K", "").replace("+", " ");
+        String[] parts = cleaned.split(" ");
+
+        int kilometers = Integer.parseInt(parts[0]);
+        int meters = parts.length > 1 ? Integer.parseInt(parts[1]) : 0;
+
+        return kilometers ;
     }
 
     /**

@@ -7,6 +7,8 @@ import org.apache.hadoop.hbase.*;
 import org.apache.hadoop.hbase.client.*;
 import org.apache.hadoop.hbase.util.Bytes;
 import java.io.IOException;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.*;
@@ -73,11 +75,11 @@ public class totalOpsV1 {
 
         // 查询原始数据
         Map<Integer, Map<String, Double>> laneStats = queryRawTrafficData(orgcode, startHour, endHour);
-
-        System.out.println("查询结果车道数: " + laneStats.size());
-        for (Map.Entry<Integer, Map<String, Double>> entry : laneStats.entrySet()) {
-            System.out.println("车道 " + entry.getKey() + ": " + entry.getValue());
-        }
+//
+//        System.out.println("查询结果车道数: " + laneStats.size());
+//        for (Map.Entry<Integer, Map<String, Double>> entry : laneStats.entrySet()) {
+//            System.out.println("车道 " + entry.getKey() + ": " + entry.getValue());
+//        }
 
         // 按方向组织结果
         return formatTrafficDataByDirection(laneStats);
@@ -297,10 +299,13 @@ public class totalOpsV1 {
         for (Map<String, Double> stats : laneStats.values()) {
             double totalSpeed = stats.getOrDefault("totalSpeed", 0.0);
             double vehicleCount = stats.getOrDefault("vehicleCount", 0.0);
-
             // 计算平均速度
             double aveSpeed = vehicleCount > 0 ? totalSpeed / vehicleCount : 0.0;
-            stats.put("aveSpeed", aveSpeed);
+            // 使用BigDecimal进行四舍五入
+            BigDecimal bd = new BigDecimal(aveSpeed);
+            bd = bd.setScale(2, RoundingMode.HALF_UP); // 参数2表示保留两位，HALF_UP表示四舍五入
+            double roundedAveSpeed = bd.doubleValue();
+            stats.put("aveSpeed", roundedAveSpeed);
         }
     }
 

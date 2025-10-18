@@ -6,10 +6,10 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.util.List;
-    @AllArgsConstructor
-    @NoArgsConstructor
-    @Getter
-    @Setter
+@AllArgsConstructor
+@NoArgsConstructor
+@Getter
+@Setter
 public class SectionalFlowResult {
         private int code;
     private String message;

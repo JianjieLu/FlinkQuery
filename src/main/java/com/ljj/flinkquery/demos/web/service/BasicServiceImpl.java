@@ -6,6 +6,7 @@ import com.alibaba.fastjson2.JSONException;
 import com.ljj.flinkquery.demos.entity.*;
 import com.ljj.flinkquery.demos.entity.watch.*;
 import com.ljj.flinkquery.demos.web.impl.edu.hbaseTool;
+import com.ljj.flinkquery.demos.web.impl.edu.querys.TollStationFlowCalculator;
 import com.ljj.flinkquery.demos.web.impl.edu.tableOps.LocationOP;
 import com.ljj.flinkquery.demos.web.impl.edu.tableOps.totalOpsv3;
 import com.ljj.flinkquery.demos.web.impl.edu.tools.HBaseTableScanner;
@@ -37,6 +38,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.text.DecimalFormat;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.*;
@@ -48,8 +50,7 @@ import static com.ljj.flinkquery.FlinkQueryApplication.getTodayTotalMemory;
 import static com.ljj.flinkquery.demos.entity.data.Utils.convertFromTimestampMillis;
 import static com.ljj.flinkquery.demos.entity.data.Utils.convertToTimestamp;
 import static com.ljj.flinkquery.demos.web.impl.edu.querys.RampTrafficQuery.*;
-import static com.ljj.flinkquery.demos.web.impl.edu.tableOps.totalOps.getDayOfYear;
-import static com.ljj.flinkquery.demos.web.impl.edu.tableOps.totalOps.getNearestMinuteCongestionStats;
+import static com.ljj.flinkquery.demos.web.impl.edu.tableOps.totalOps.*;
 import static com.ljj.flinkquery.demos.web.impl.edu.tableOps.totalOpsV2.getUpDownChargerByDuration1;
 import static com.ljj.flinkquery.demos.web.impl.edu.tools.HBaseTableScanner.generateScanPlan;
 import static com.ljj.flinkquery.demos.web.impl.edu.tools.HighwaySectionUtils.*;
@@ -63,7 +64,6 @@ public class BasicServiceImpl implements BasicService {
     private RedisTemplate<String, String> redisTemplate;
     @Autowired
     private RedisTemplate<String, String> redisTemplate1;
-
 
     @Override
     public Map<Integer, Integer> getVehicleTypesByDuration(Long startTime, Long endTime) {
@@ -119,6 +119,7 @@ public class BasicServiceImpl implements BasicService {
     @Override
     public List<upDownResult> getBatchUpDownCharger(List<String> stationIds, String beginTime, String endTime, int level) {
         List<upDownResult> l = new ArrayList<>();
+        System.out.println("====sts:"+stationIds);
         for (String stationId : stationIds) {
             l.add(getUpDownChargerByDuration1(stationId, beginTime, endTime, level));
         }
@@ -129,7 +130,6 @@ public class BasicServiceImpl implements BasicService {
     public totalResult getHolyTotal(Long timestamp) throws IOException, ExecutionException, InterruptedException {
         long st = System.currentTimeMillis();
         System.out.println("getHolyTotal.start: " + st);
-        Set<String> keys = redisTemplate.keys("v2*");
         int sum = 0;
         int upSum = 0;
         int downSum = 0;
@@ -137,80 +137,131 @@ public class BasicServiceImpl implements BasicService {
         int busDown = 0;
         int trackUp = 0;
         int trackDown = 0;
+         int shangxing1 = 0;
+    int xiaxing2 = 0;
+    double shangxingSum = 0;
+    double xiaxingSum = 0;
+    int upkeche = 0, uphuoche = 0, upweihuaping = 0, upzhongxinghuoche = 0;
+    int downkeche = 0, downhuoche = 0, downweihuaping = 0, downzhongxinghuoche = 0;
+           // 1. 获取所有v2_开头的键
+            Set<String> keys = redisTemplate1.keys("v2_*");
+            Set<String> timesK = new HashSet<>();
+            Set<String> timesA = new HashSet<>();
+            Set<String> timesB = new HashSet<>();
+            Set<String> timesC = new HashSet<>();
+            Set<String> timesD = new HashSet<>();
+            for (String key : keys) {
+                String[] l = key.split("_");
+                if (l[2].charAt(0) != 'K') {
+                    if (l[2].charAt(0) == 'A') timesA.add(l[1]);
+                    if (l[2].charAt(0) == 'B') timesB.add(l[1]);
+                    if (l[2].charAt(0) == 'C') timesC.add(l[1]);
+                    if (l[2].charAt(0) == 'D') timesD.add(l[1]);
+                } else timesK.add(l[1]);
+            }
 
+        Map<Long, VehicleSeg> m = new HashMap<>();
 
-        for (String redisKey : keys) {
-            String jsonData = redisTemplate1.opsForValue().get(redisKey);
-            if (jsonData != null && !jsonData.isEmpty()) {
-                if (jsonData.startsWith("\"") && jsonData.endsWith("\"")) {
-                    jsonData = jsonData.substring(1, jsonData.length() - 1).replace("\\\"", "\"");
-                }
-                String o = "";
-                List<VehicleSeg> l = new ArrayList<>();
-                try {
-                    JSONArray objects = JSON.parseArray(jsonData);
-                    for (Object object : objects) {
-                        o = object.toString();
-                        l.add(JSON.parseObject(object.toString(), VehicleSeg.class));
+             List<Long> list = new ArrayList<>();
+                for (String key : timesK) list.add(Long.parseLong(key) / 1000 * 1000);
+//                System.out.println("startMil:" + startMil + "   endMil:" + endMil + "  startM:" + startM + "   endm:" + endM + "st:" + st + "tt" + tt);//startMil:K1054   endMil:K1048  startM:1049   endm:1054
+//                System.out.println("startM:" + startM + " endM:" + endM + " iiii:" + list);
+                for (long i : list) {
+
+                for (int j = 1016; j < 1175; j++) {
+//                    for (int j = startM; j < endM; j++) {
+
+                        String redisKey = "v2_" + i + "_K" + j;
+                        List<VehicleSeg> l = ge(redisTemplate, redisKey);
+
+                        for (VehicleSeg vs : l) {
+                            //判断是否有重复出
+                            if (m.get(vs.getCarId()) == null) {
+                                m.put(vs.getCarId(), vs);
+                            } else {
+                                VehicleSeg yuan = m.get(vs.getCarId());
+                                vs.setPlateNo(vs.getPlateNo());
+                                vs.setDirection(vs.getDirection());
+                                vs.setPointSum(yuan.getPointSum() + vs.getPointSum());
+                                vs.setSpeedSum(yuan.getSpeedSum() + vs.getSpeedSum());
+                                vs.setSpecialFlag(vs.getSpecialFlag());
+                                m.put(vs.getCarId(), vs);
+                            }
+                        }
                     }
-                } catch (JSONException e) {
-                    // 记录错误日志，包括键和无效的JSON数据
-                    System.err.println("JSON解析失败，键: " + redisKey);
-                    System.err.println("无效的JSON数据: " + o);
-                    e.printStackTrace();
                 }
+                double n = 0;
+        for (Map.Entry<Long, VehicleSeg> entry : m.entrySet()){
 
-                for (VehicleSeg v : l) {
-                    sum++;
-                    Integer vt = v.getOriginalType();
-                    Integer vet = v.getVehicleType();
-                    boolean b = vt == 2 || vt == 10 || vt == 8 || vt == 11 || vt == 170 || vt == 171 || vt == 172 || vt == 173 || vt == 174 || vt == 175 || vt == 176 || vt == 177;
+                VehicleSeg v = entry.getValue();
+                if (v != null) {
+                    n++;
 
                     if (v.getDirection() == 1) {
-                        upSum++;
-                        if (vt == 1 || vt == 3 || vt == 7 || vt == 15) busUp++;
-                        else if (b) trackUp++;
-                        else {
-                            if (vet >= 1 && vet <= 4) busUp++;
-                            else if (vet >= 11 && vet <= 16) trackUp++;
-                            else {
-                                sum--;
-                                upSum--;
+                        shangxing1++;
+                        shangxingSum += v.getAverageSpeed();
+                        Integer vt = v.getOriginalType();
+                        Integer vet = v.getVehicleType();
+                        if (vt != null) {
+                            if (vt == 1 || vt == 3 || vt == 7 || vt == 15) upkeche++;
+                            else if (vt == 2 || vt == 10 || vt == 11 || vt == 170 || vt == 171 || vt == 172 || vt == 173 || vt == 174 || vt == 175 || vt == 176 || vt == 177)
+                                uphuoche++;
+                            else if (vt == 8) {
+                                upweihuaping++;
+                                uphuoche++;
                             }
+                        }else{
+                       if (vet>=1&&vet<=4) upkeche++;
+                    else if (vet >= 11 && vet<= 16)
+                        uphuoche++;else {n--;shangxing1--;shangxingSum -= v.getAverageSpeed();}
+                }
+
+                        if (v.getSpecialFlag() != null) {
+                            String[] sd = v.getSpecialFlag().split(";");
+                            for (String s : sd)
+                                if (s.equals("20") || s.equals("21") || s.equals("22") || s.equals("23"))
+                                    upzhongxinghuoche++;
                         }
-                    } else {
-                        downSum++;
-                        if (vt == 1 || vt == 3 || vt == 7 || vt == 15) busDown++;
-                        else if (b) trackDown++;
-                        else {
-                            if (vet >= 1 && vet <= 4) busDown++;
-                            else if (vet >= 11 && vet <= 16) trackDown++;
-                            else {
-                                sum--;
-                                downSum--;
+                    } else if (v.getDirection() == 2) {
+                        xiaxing2++;
+                        xiaxingSum += v.getAverageSpeed();
+                        Integer vt = v.getOriginalType();
+                        Integer vet = v.getVehicleType();
+                        if (vt != null) {
+                            if (vt == 1 || vt == 3 || vt == 7 || vt == 15) downkeche++;
+                            else if (vt == 2 || vt == 10 || vt == 11 || vt == 170 || vt == 171 || vt == 172 || vt == 173 || vt == 174 || vt == 175 || vt == 176 || vt == 177)
+                                downhuoche++;
+                            else if (vt == 8) {
+                                downweihuaping++;
+                                downhuoche++;
                             }
-                        }
+                        }else{
+                       if (vet>=1&&vet<=4) downkeche++;
+                    else if (vet >= 11 && vet<= 16)
+                        downhuoche++;
+                    else {n--;xiaxing2--;xiaxingSum -= v.getAverageSpeed();}
+                }
                     }
                 }
             }
-        }
-        System.out.println("upSum:" + upSum + "downSum:" + downSum + "busUp:" + busUp + "busDown:" + busDown);
-        secondResult second = new secondResult(upSum, downSum, busUp, trackUp, busDown, trackDown,
-                Math.round((((double) busUp / upSum) * 100.0)) / 100.0,
-                Math.round((((double) trackUp / upSum) * 100.0)) / 100.0,
-                Math.round((((double) busDown / downSum) * 100.0)) / 100.0,
-                Math.round((((double) trackDown / downSum) * 100.0)) / 100.0);
+        System.out.println("upSum:" + shangxing1 + "downSum:" + xiaxing2 + "busUp:" + upkeche + "busDown:" + downkeche);
+        secondResult second = new secondResult(shangxing1, xiaxing2, upkeche, uphuoche, downkeche, downhuoche,
+                Math.round((((double) upkeche / shangxing1) * 100.0)) / 100.0,
+                Math.round((((double) uphuoche / shangxing1) * 100.0)) / 100.0,
+                Math.round((((double) downkeche / xiaxing2) * 100.0)) / 100.0,
+                Math.round((((double) downhuoche / xiaxing2) * 100.0)) / 100.0);
 
         int asd = getDayOfYear(timestamp);
         int[] ad = getYearToDateTrafficMemory();
         //数量，时间
-        Pair<Integer, Integer> np = getTodayTotalMemory(timestamp);
+        Pair<Integer, Long> np = getTodayTotalMemory(timestamp);
         //今日车流量  年日均交通量  车流量走势
         firstResult f = getNearestMinuteCongestionStats(timestamp);
         System.out.println("getHolyTotal.end-start: " + (System.currentTimeMillis() - st));
         Map<String, Map<Integer, Map<Integer, Integer>>> hourlyTrafficForDayAndPreviousDay = totalOps.getHourlyTrafficForDayAndPreviousDay(timestamp);
 //        return new totalResult(totalOps.getNearestMinuteCongestionStats(timestamp),second,getTodayTotal(timestamp),Math.round((((double) ad[0]/asd) * 100.0)) / 100.0,Math.round((((double) busUp /upSum) * 100.0)) / 100.0,totalOps.getHourlyTrafficForDayAndPreviousDay(timestamp));
         System.out.println("上行：ad[0]"+ad[0]+"asd:"+asd+"下行:ad[1]"+ad[1]);
+
         return new totalResult(f, second, np.getKey(), Math.round((((double) ad[0] / asd) * 100.0)) / 100.0, Math.round((((double) ad[1] / asd) * 100.0)) / 100.0, hourlyTrafficForDayAndPreviousDay);
     }
 
@@ -348,17 +399,17 @@ public class BasicServiceImpl implements BasicService {
         System.out.println("startTime-currentTime:" + abs(startTime - currentTime));
         System.out.println("startTime：" + startTime);
         System.out.println("currentTime：" + currentTime);
-        if (abs(startTime - currentTime) < 20000) {
-            return sectionLOSRedis(beginTime, endTime1, startStake, endStake);
-        }
-        if (startTime > timeSplit) {
-            return sectionLOSRedis(beginTime, endTime1, startStake, endStake);
-        } else if (endTime > timeSplit & startTime < timeSplit) {
-            return new sectionLosResult(200, "内存、数据库同时查询", sectionLOSRedis(beginTime, endTime1, startStake, endStake).getData(), true);
-        } else if (endTime < timeSplit) {
+//        if (abs(startTime - currentTime) < 20000) {
+//            return sectionLOSRedis(beginTime, endTime1, startStake, endStake);
+//        }
+//        if (startTime > timeSplit) {
+//            return sectionLOSRedis(beginTime, endTime1, startStake, endStake);
+//        } else if (endTime > timeSplit & startTime < timeSplit) {
+//            return new sectionLosResult(200, "内存、数据库同时查询", sectionLOSRedis(beginTime, endTime1, startStake, endStake).getData(), true);
+//        } else if (endTime < timeSplit) {
             return sectionLOSHbase(beginTime, endTime1, startStake, endStake);
-        }
-        return new sectionLosResult(200, "起始时间必须大于终止时间", null, true);
+//        }
+//        return new sectionLosResult(200, "起始时间必须大于终止时间", null, true);
 
     }
 
@@ -401,7 +452,7 @@ public class BasicServiceImpl implements BasicService {
 //
 //        String zaStartMil = "";
 //        String zaEndMil = "";
-//        TimeSpatialData kong = new TimeSpatialData(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, "0", "0");
+//        TimeSpatialData kong = new TimeSpatialData(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, "0","0","0");
 //        TimeSpatialResult t2 = new TimeSpatialResult(200, "内存查找————无范围内数据,原因：桩号转换失败", kong, true);
 //        TimeSpatialData tos = new TimeSpatialData();
 //        boolean za = true;
@@ -437,7 +488,7 @@ public class BasicServiceImpl implements BasicService {
 //        tt = edt / 60000 * 60000 + 60000;
 //        zaStartMil = "";
 //        zaEndMil = "";
-//        kong = new TimeSpatialData(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, "0", "0");
+//        kong = new TimeSpatialData(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, "0","0","0");
 //        t2 = new TimeSpatialResult(200, "8001————无范围内数据,原因：桩号转换失败", kong, true);
 //        tos = new TimeSpatialData();
 //        za = true;
@@ -828,12 +879,14 @@ public class BasicServiceImpl implements BasicService {
     int upkeche = 0, uphuoche = 0, upweihuaping = 0, upzhongxinghuoche = 0;
     int downkeche = 0, downhuoche = 0, downweihuaping = 0, downzhongxinghuoche = 0;
 public sectionLosResult sectionLOSHbase(String beginTime, String endTime, String startStake, String endStake) throws IOException {
+
     long startTime = System.currentTimeMillis();
 
 
 
     // 处理桩号格式
     if (startStake != null) startStake = startStake.replace(" ", "+");
+
     if (endStake != null) endStake = endStake.replace(" ", "+");
 
     // 转换时间范围
@@ -857,50 +910,141 @@ public sectionLosResult sectionLOSHbase(String beginTime, String endTime, String
 
     // 存储所有车辆数据
     Map<Long, VehicleSeg> vehicleMap = new HashMap<>();
-
-    // 扫描所有季度表
-    for (Map.Entry<String, HBaseTableScanner.KeyRange> entry : scanPlan.entrySet()) {
-        String tableName = entry.getKey();
-        String startKey = entry.getValue().getStartKey();
-        String endKey = entry.getValue().getEndKey();
-
-        // 扫描该表的时间范围
-        List<VehicleSeg> segs = scanTableByStakeRange(tableName, startKey, endKey, startM, endM);
-        mergeVehicleSegs(vehicleMap, segs);
-    }
-
-    // 统计车辆数据
-    for (VehicleSeg v : vehicleMap.values()) {
-        if (v == null) continue;
-
-        if (v.getDirection() == 1) {
-            shangxing1++;
-            shangxingSum += v.getAverageSpeed();
-            countVehicleType(v, true);
-        } else if (v.getDirection() == 2) {
-            xiaxing2++;
-            xiaxingSum += v.getAverageSpeed();
-            countVehicleType(v, false);
-        }
-    }
-
-    // 计算密度和LOS
+    System.out.println("scanPlan:"+scanPlan);
     List<sectionLos> resultList = new ArrayList<>();
-    if (shangxing1 > 0 || xiaxing2 > 0) {
-        double upDensity = shangxing1 / ((endM - startM) * 4.0);
-        double downDensity = xiaxing2 / ((endM - startM) * 4.0);
 
-        List<sectionLosDirPieces> dirPieces = new ArrayList<>();
-        dirPieces.add(new sectionLosDirPieces("1", calculateLOS(upDensity), upDensity));
-        dirPieces.add(new sectionLosDirPieces("2", calculateLOS(downDensity), downDensity));
+    if(!Objects.equals(startStake, "") && !Objects.equals(endStake, "")){//如果起始结束桩号都不是空
+             List<sectionStartEndStake> sections1 = getPassedSectionStartEndStake(startStake, endStake);
+            for(sectionStartEndStake section : sections1){
+                for (Map.Entry<String, HBaseTableScanner.KeyRange> entry : scanPlan.entrySet()) {
+                    String tableName = entry.getKey();
+                    String startKey = entry.getValue().getStartKey();
+                    String endKey = entry.getValue().getEndKey();
+                    List<VehicleSeg> segs = getVehicleSegmentsByRange(tableName, Long.parseLong(startKey), Long.parseLong(endKey),section.getStartStake(),section.getEndStake());
+                    vehicleMap=mergeVehicleSegs(vehicleMap, segs);
 
-        String sectionName = "路段";
-        if (!startStake.isEmpty() && !endStake.isEmpty()) {
-            sectionName = startStake + "-" + endStake;
-        }
+                          // 统计车辆数据
+                        for (VehicleSeg v : vehicleMap.values()) {
+                            if (v == null) continue;
 
-        resultList.add(new sectionLos(sectionName, sectionName, dirPieces));
+                            if (v.getDirection() == 1) {
+                                shangxing1++;
+                                shangxingSum += v.getAverageSpeed();
+                                countVehicleType(v, true);
+                            } else if (v.getDirection() == 2) {
+                                xiaxing2++;
+                                xiaxingSum += v.getAverageSpeed();
+
+
+                                countVehicleType(v, false);
+                            }
+                        }
+                        // 计算密度和LOS
+                            DecimalFormat df = new DecimalFormat("#.##"); // 也可以用 "0.00" 模式，不足两位会补零
+                            String formattedNumber = df.format(shangxing1 / ((endM - startM) * 2.0));
+                            String formattedNumber1 = df.format(xiaxing2 / ((endM - startM) * 2.0));
+                            List<sectionLosDirPieces> dirPieces = new ArrayList<>();
+                    //        System.out.println("upDensity1:" + upDensity1+ "  downDensity1:" + downDensity1+"shangxing1:" + shangxing1+"xiaxing2:" + xiaxing2+"endM:"+endM+"startM:"+startM);
+                            SaturationResult saturationResult = calculateSaturation(Double.parseDouble(formattedNumber));
+                            SaturationResult saturationResult1 = calculateSaturation(Double.parseDouble(formattedNumber1));
+                            dirPieces.add(new sectionLosDirPieces("1", saturationResult.getLevel(), saturationResult.getSaturation()));
+                            dirPieces.add(new sectionLosDirPieces("2", saturationResult1.getLevel(), saturationResult1.getSaturation()));
+
+
+                    //        List<sectionLosDirPieces> dirPieces = new ArrayList<>();
+                    //        dirPieces.add(new sectionLosDirPieces("1", calculateLOS(upDensity),calculateSaturation(upDensity).getSaturation()));
+                    //        dirPieces.add(new sectionLosDirPieces("2", calculateLOS(downDensity), calculateSaturation(upDensity).getSaturation()));
+
+
+
+                            String sectionName = "路段";
+                            if (endStake != null && startStake != null && !startStake.isEmpty() && !endStake.isEmpty()) {
+                                sectionName = startStake + "-" + endStake;
+                            }
+                            System.out.println("sectionName:"+sectionName+" dirPieces:"+dirPieces);
+                            resultList.add(new sectionLos(section.getSectionName(), "K"+section.getStartStake()+"-"+"K"+section.getEndStake(), dirPieces));
+                          shangxing1 = 0;
+                         xiaxing2 = 0;
+                         shangxingSum = 0;
+                         xiaxingSum = 0;
+                         upkeche = 0;uphuoche = 0;upweihuaping = 0;upzhongxinghuoche = 0;
+                         downkeche = 0;downhuoche = 0;downweihuaping = 0;downzhongxinghuoche = 0;
+
+
+                }//季度表
+            }//路段表
+    }else{
+         List<sectionStartEndStake> sections1 = new ArrayList<>();
+         sections1.add(new sectionStartEndStake("鄂北-大新", 1016, 1030));
+         sections1.add(new sectionStartEndStake("大新-大悟", 1030, 1043));
+            for(sectionStartEndStake section : sections1){
+                System.out.println("section:"+section);
+                for (Map.Entry<String, HBaseTableScanner.KeyRange> entry : scanPlan.entrySet()) {
+                    String tableName = entry.getKey();
+                    String startKey = entry.getValue().getStartKey();
+                    String endKey = entry.getValue().getEndKey();
+                    List<VehicleSeg> segs = getVehicleSegmentsByRange(tableName, Long.parseLong(startKey), Long.parseLong(endKey),section.getStartStake(),section.getEndStake());
+                    vehicleMap=mergeVehicleSegs(vehicleMap, segs);
+
+                          // 统计车辆数据
+                        for (VehicleSeg v : vehicleMap.values()) {
+                            if (v == null) continue;
+
+                            if (v.getDirection() == 1) {
+                                shangxing1++;
+                                shangxingSum += v.getAverageSpeed();
+                                countVehicleType(v, true);
+                            } else if (v.getDirection() == 2) {
+                                xiaxing2++;
+                                xiaxingSum += v.getAverageSpeed();
+                                countVehicleType(v, false);
+                            }
+                        }
+                    System.out.println("shangxing1:"+shangxing1+"xiaxing2:"+xiaxing2);
+                        // 计算密度和LOS
+                            DecimalFormat df = new DecimalFormat("#.##"); // 也可以用 "0.00" 模式，不足两位会补零
+                            String formattedNumber = df.format(shangxing1 / ((endM - startM) * 2.0));
+                            String formattedNumber1 = df.format(xiaxing2 / ((endM - startM) * 2.0));
+                            List<sectionLosDirPieces> dirPieces = new ArrayList<>();
+                    //        System.out.println("upDensity1:" + upDensity1+ "  downDensity1:" + downDensity1+"shangxing1:" + shangxing1+"xiaxing2:" + xiaxing2+"endM:"+endM+"startM:"+startM);
+                            SaturationResult saturationResult = calculateSaturation(Double.parseDouble(formattedNumber));
+                            SaturationResult saturationResult1 = calculateSaturation(Double.parseDouble(formattedNumber1));
+                            dirPieces.add(new sectionLosDirPieces("1", saturationResult.getLevel(), saturationResult.getSaturation()));
+                            dirPieces.add(new sectionLosDirPieces("2", saturationResult1.getLevel(), saturationResult1.getSaturation()));
+
+
+                    //        List<sectionLosDirPieces> dirPieces = new ArrayList<>();
+                    //        dirPieces.add(new sectionLosDirPieces("1", calculateLOS(upDensity),calculateSaturation(upDensity).getSaturation()));
+                    //        dirPieces.add(new sectionLosDirPieces("2", calculateLOS(downDensity), calculateSaturation(upDensity).getSaturation()));
+
+
+
+                            String sectionName = "路段";
+                            if (endStake != null && startStake != null && !startStake.isEmpty() && !endStake.isEmpty()) {
+                                sectionName = startStake + "-" + endStake;
+                            }
+                            System.out.println("===================================");
+                            if(section.getEndStake()==1030)resultList.add(new sectionLos("鄂北-大新", "K1016+020-K1030+448", dirPieces));
+                            else resultList.add(new sectionLos("大新-大悟", "K1030+448-K1043+400", dirPieces));
+                          shangxing1 = 0;
+                         xiaxing2 = 0;
+                         shangxingSum = 0;
+                         xiaxingSum = 0;
+                         upkeche = 0;uphuoche = 0;upweihuaping = 0;upzhongxinghuoche = 0;
+                         downkeche = 0;downhuoche = 0;downweihuaping = 0;downzhongxinghuoche = 0;
+
+
+                }//季度表
+            }//路段表
     }
+
+
+
+
+
+
+
+
 
     return new sectionLosResult(200, "查询成功", resultList, true);
 }
@@ -984,18 +1128,21 @@ private List<VehicleSeg> parseVehicleSegs(Result result) {
 /**
  * 合并车辆数据
  */
-private void mergeVehicleSegs(Map<Long, VehicleSeg> map, List<VehicleSeg> segs) {
+private Map<Long, VehicleSeg> mergeVehicleSegs(Map<Long, VehicleSeg> map, List<VehicleSeg> segs) {
+    Map<Long, VehicleSeg> m1=new HashMap<>();
     for (VehicleSeg seg : segs) {
         VehicleSeg existing = map.get(seg.getCarId());
         if (existing == null) {
-            map.put(seg.getCarId(), seg);
+            m1.put(seg.getCarId(), seg);
         } else {
             // 合并逻辑（根据业务需求）
             existing.setPointSum(existing.getPointSum() + seg.getPointSum());
             existing.setSpeedSum(existing.getSpeedSum() + seg.getSpeedSum());
             existing.setAverageSpeed(existing.getSpeedSum() / existing.getPointSum());
+            m1.put(seg.getCarId(), existing);
         }
     }
+    return m1;
 }
 
 /**
@@ -1461,431 +1608,164 @@ private boolean isTableExists(Connection connection, String tableName) throws IO
         else return "F";
     }
 
-    @Override
-    public sectionLosResult zaSectionLOS(String beginTime, String endTime, String facilitiesId) throws IOException {
-        long t1 = System.currentTimeMillis();
-        //region Description
+@Override
+public sectionLosResult zaSectionLOS(String beginTime, String endTime, String facilitiesId) throws IOException {
+    long t1 = System.currentTimeMillis();
+    // 初始化累加器
+    Map<String, Double> znAccumulator = new HashMap<>(); // 路段车辆数累加器
+    Map<String, Double> lenAccumulator = new HashMap<>(); // 路段长度累加器
+    znAccumulator.put("A", 0.0);
+    znAccumulator.put("B", 0.0);
+    znAccumulator.put("C", 0.0);
+    znAccumulator.put("D", 0.0);
 
+    lenAccumulator.put("A", 0.0);
+    lenAccumulator.put("B", 0.0);
+    lenAccumulator.put("C", 0.0);
+    lenAccumulator.put("D", 0.0);
 
-        int shangxing1 = 0;
-        int xiaxing2 = 0;//下行车辆数
+    long st = convertToTimestamp(beginTime) / 1000 * 1000;
+    long tt = convertToTimestamp(endTime) / 1000 * 1000 + 1000;
 
-        int startM = 0;
-        int endM = 0;//桩号中的数字
-        long st = convertToTimestamp(beginTime) / 1000 * 1000;
-        long tt = convertToTimestamp(endTime) / 1000 * 1000 + 1000;
-        int upkeche = 0;
-        int uphuoche = 0;
-        int upweihuaping = 0;
-        int upzhongxinghuoche = 0;
-        int downkeche = 0;
-        int downhuoche = 0;
-        int downweihuaping = 0;
-        int downzhongxinghuoche = 0;
-        int zupkeche = 0;
-        int zuphuoche = 0;
-        int zupweihuaping = 0;
-        int zupzhongxinghuoche = 0;
-        double shangxingSum = 0;
-        double xiaxingSum = 0;//下行平均速度总和
-        int index;
-        int index1;
-        String startMil;
-        String endMil;
-        double n = 0;
-        double sum = 0;
-        double zn = 0;
-        double zsum = 0;
-        String zaStartMil = "";
-        String zaEndMil = "";
-        TimeSpatialData kong = new TimeSpatialData(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, "0", "0");
-        TimeSpatialResult t2 = new TimeSpatialResult(200, "内存查找————无范围内数据,原因：桩号转换失败", kong, true);
-        TimeSpatialData tos = new TimeSpatialData();
-        boolean za = true;
-        boolean main = true;
-        stakeEnvents.StakeAssignment stakeAssign;
-        Map<Long, VehicleSeg> mergedMap = new HashMap<>();
-        Map<Long, VehicleSeg> m = new HashMap<>();
-        Map<Long, VehicleSeg> am = new HashMap<>();
-        Map<Long, VehicleSeg> bm = new HashMap<>();
-        Map<Long, VehicleSeg> cm = new HashMap<>();
-        Map<Long, VehicleSeg> dm = new HashMap<>();
-//Set<String> keys = redisTemplate.keys("v*");
-//            System.out.println("keys: "+keys);
-//        System.out.println(System.currentTimeMillis());
-        {
-//            System.out.println("开始数据库查找，查找语句：http://100.65.38.139:8080/getByTimeSpatialWithID?startTime=" + startTime + "&endTime=" + endTime + "&startMileage=" + startMileage + "&endMileage=" + endMileage + "&Longitude1=" + Longitude1 + "&Latitude1=" + Latitude1 + "&Longitude2=" + Longitude2 + "&Latitude2=" + Latitude1);
-            shangxing1 = 0;
-            xiaxing2 = 0;//下行车辆数
-            shangxingSum = 0;
-            xiaxingSum = 0;//下行平均速度总和1746857652000
+    // 处理时间范围
+    st = st / 60000 * 60000;
+    tt = tt / 60000 * 60000 + 60000;
 
-            startM = 0;
-            endM = 0;//桩号中的数字
-            upkeche = 0;
-            uphuoche = 0;
-            upweihuaping = 0;
-            upzhongxinghuoche = 0;
-            downkeche = 0;
-            downhuoche = 0;
-            downweihuaping = 0;
-            downzhongxinghuoche = 0;
-            zupkeche = 0;
-            zuphuoche = 0;
-            zupweihuaping = 0;
-            zupzhongxinghuoche = 0;
-
-
-            st = st / 60000 * 60000;
-            tt = tt / 60000 * 60000 + 60000;
-            zaStartMil = "";
-            zaEndMil = "";
-            kong = new TimeSpatialData(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, "0", "0");
-            t2 = new TimeSpatialResult(200, "8001————无范围内数据,原因：桩号转换失败", kong, true);
-            tos = new TimeSpatialData();
-            za = true;
-            main = true;
-
-            n = 0;
-            sum = 0;
-            zn = 0;
-            zsum = 0;
-
-
-            List<sectionLosDirPieces> sls=new ArrayList<>();
-            //AK
-                String startSK = LocationOP.GETLonNearest(114.03852081298828, roadAKDataList).getLocation();
-                String endSK = LocationOP.GETLonNearest(114.04580688476562, roadAKDataList).getLocation();
-                index = startSK.indexOf("+");
-                zaStartMil = ((index != -1) ? startSK.substring(2, index) : startSK);
-                index1 = endSK.indexOf("+");
-                zaEndMil = ((index1 != -1) ? endSK.substring(2, index1) : endSK);
-//                System.out.println("AK  zaStartMil:  " + zaStartMil + "  zaEndMil:  " + zaEndMil);
-//                System.out.println("AK  startSK:  " + startSK + "  endSK:  " + endSK);
-                //从起始时间到终止时间
-                startM = Integer.parseInt(zaStartMil);
-                endM = Integer.parseInt(zaEndMil);
-                if (startM > endM) {
-                    int temp = endM;
-                    endM = startM;
-                    startM = temp;
-                }
-                endM += 1;
-                for (long i = st; i < tt; i += 60000) {
-                    for (int j = startM; j < endM; j++) {
-                        List<VehicleSeg> l = totalOps.getVeByRowkey(hbaseTool.convertToHBaseTableName(i), i + "_AK" + j);
-                        for (VehicleSeg vs : l) {
-                            //判断是否有重复出
-                            if (am.get(vs.getCarId()) == null) {
-                                am.put(vs.getCarId(), vs);
-                            } else {
-                                VehicleSeg yuan = am.get(vs.getCarId());
-                                vs.setPlateNo(vs.getPlateNo());
-                                vs.setDirection(vs.getDirection());
-                                vs.setPointSum(yuan.getPointSum() + vs.getPointSum());
-                                vs.setSpeedSum(yuan.getSpeedSum() + vs.getSpeedSum());
-                                vs.setSpecialFlag(vs.getSpecialFlag());
-                                am.put(vs.getCarId(), vs);
-                            }
-                        }
-                    }
-                }
-                 for (Map.Entry<Long, VehicleSeg> entry : am.entrySet()) {
-                VehicleSeg v = entry.getValue();
-                if (v != null) {
-                    zn++;
-                    zsum += v.getAverageSpeed();
-
-                    Integer vt = v.getOriginalType();
-                    Integer vet = v.getVehicleType();
-                    if (vt != null) {
-                        if (vt == 1 || vt == 3 || vt == 7 || vt == 15) zupkeche++;
-                        else if (vt == 2 || vt == 10 || vt == 11 || vt == 170 || vt == 171 || vt == 172 || vt == 173 || vt == 174 || vt == 175 || vt == 176 || vt == 177)
-                            zuphuoche++;
-                        else if (vt == 8) {
-                            zupweihuaping++;
-                            zuphuoche++;
-                        }
-                    } else {
-                        if (vet >= 1 && vet <= 4) zupkeche++;
-                        else if (vet >= 11 && vet <= 16)
-                            zuphuoche++;
-                        else {
-                            zn--;
-                            zsum -= v.getAverageSpeed();
-                        }
-                    }
-                }
-            }
-                 sls.add(new sectionLosDirPieces("A",calculateLOS(zn/ ((endM - startM) * 4.0)), zn/ ((endM - startM) * 4.0)));
-
-            //BK
-                startSK = LocationOP.GETLonNearest(114.03852081298828, roadBKDataList).getLocation();
-               endSK = LocationOP.GETLonNearest(114.04602813720703, roadBKDataList).getLocation();
-                index = startSK.indexOf("+");
-                zaStartMil = ((index != -1) ? startSK.substring(2, index) : startSK);
-                index1 = endSK.indexOf("+");
-                zaEndMil = ((index1 != -1) ? endSK.substring(2, index1) : endSK);
-//                System.out.println("BK  zaStartMil:  " + zaStartMil + "  zaEndMil:  " + zaEndMil);
-//                System.out.println("BK  startSK:  " + startSK + "  endSK:  " + endSK);
-                //从起始时间到终止时间
-                startM = Integer.parseInt(zaStartMil);
-                endM = Integer.parseInt(zaEndMil);
-                if (startM > endM) {
-                    int temp = endM;
-                    endM = startM;
-                    startM = temp;
-                }
-                endM += 1;
-
-                for (long i = st; i < tt; i += 60000) {
-                    for (int j = startM; j < endM; j++) {
-                        List<VehicleSeg> l = totalOps.getVeByRowkey(hbaseTool.convertToHBaseTableName(i), i + "_BK" + j);
-                        for (VehicleSeg vs : l) {
-                            //判断是否有重复出
-                            if (bm.get(vs.getCarId()) == null) {
-                                bm.put(vs.getCarId(), vs);
-                            } else {
-                                VehicleSeg yuan = bm.get(vs.getCarId());
-                                vs.setPlateNo(vs.getPlateNo());
-                                vs.setDirection(vs.getDirection());
-                                vs.setPointSum(yuan.getPointSum() + vs.getPointSum());
-                                vs.setSpeedSum(yuan.getSpeedSum() + vs.getSpeedSum());
-                                vs.setSpecialFlag(vs.getSpecialFlag());
-                                bm.put(vs.getCarId(), vs);
-                            }
-                        }
-                    }
-                }
-                 for (long i = st; i < tt; i += 60000) {
-                    for (int j = startM; j < endM; j++) {
-                        List<VehicleSeg> l = totalOps.getVeByRowkey(hbaseTool.convertToHBaseTableName(i), i + "_BK" + j);
-                        for (VehicleSeg vs : l) {
-                            //判断是否有重复出
-                            if (bm.get(vs.getCarId()) == null) {
-                                bm.put(vs.getCarId(), vs);
-                            } else {
-                                VehicleSeg yuan = bm.get(vs.getCarId());
-                                vs.setPlateNo(vs.getPlateNo());
-                                vs.setDirection(vs.getDirection());
-                                vs.setPointSum(yuan.getPointSum() + vs.getPointSum());
-                                vs.setSpeedSum(yuan.getSpeedSum() + vs.getSpeedSum());
-                                vs.setSpecialFlag(vs.getSpecialFlag());
-                                bm.put(vs.getCarId(), vs);
-                            }
-                        }
-                    }
-                }
-                 for (Map.Entry<Long, VehicleSeg> entry : bm.entrySet()) {
-                VehicleSeg v = entry.getValue();
-                if (v != null) {
-                    zn++;
-                    zsum += v.getAverageSpeed();
-
-                    Integer vt = v.getOriginalType();
-                    Integer vet = v.getVehicleType();
-                    if (vt != null) {
-                        if (vt == 1 || vt == 3 || vt == 7 || vt == 15) zupkeche++;
-                        else if (vt == 2 || vt == 10 || vt == 11 || vt == 170 || vt == 171 || vt == 172 || vt == 173 || vt == 174 || vt == 175 || vt == 176 || vt == 177)
-                            zuphuoche++;
-                        else if (vt == 8) {
-                            zupweihuaping++;
-                            zuphuoche++;
-                        }
-                    } else {
-                        if (vet >= 1 && vet <= 4) zupkeche++;
-                        else if (vet >= 11 && vet <= 16)
-                            zuphuoche++;
-                        else {
-                            zn--;
-                            zsum -= v.getAverageSpeed();
-                        }
-                    }
-                }
-            }
-                 sls.add(new sectionLosDirPieces("B",calculateLOS(zn/ ((endM - startM) * 4.0)), zn/ ((endM - startM) * 4.0)));
-
-
-            //CK
-                startSK = LocationOP.GETLonNearest(114.0416030883789, roadCKDataList).getLocation();
-                endSK = LocationOP.GETLonNearest(114.04431915283203, roadCKDataList).getLocation();
-                index = startSK.indexOf("+");
-                zaStartMil = ((index != -1) ? startSK.substring(2, index) : startSK);
-                index1 = endSK.indexOf("+");
-                zaEndMil = ((index1 != -1) ? endSK.substring(2, index1) : endSK);
-//                System.out.println("CK  zaStartMil:  " + zaStartMil + "  zaEndMil:  " + zaEndMil);
-//                System.out.println("CK  startSK:  " + startSK + "  endSK:  " + endSK);
-                //从起始时间到终止时间
-                startM = Integer.parseInt(zaStartMil);
-                endM = Integer.parseInt(zaEndMil);
-                if (startM > endM) {
-                    int temp = endM;
-                    endM = startM;
-                    startM = temp;
-                }
-                endM += 1;
-                for (long i = st; i < tt; i += 60000) {
-                    for (int j = startM; j < endM; j++) {
-                        List<VehicleSeg> l = totalOps.getVeByRowkey(hbaseTool.convertToHBaseTableName(i), i + "_CK" + j);
-                        for (VehicleSeg vs : l) {
-                            //判断是否有重复出
-                            if (cm.get(vs.getCarId()) == null) {
-                                cm.put(vs.getCarId(), vs);
-                            } else {
-                                VehicleSeg yuan = cm.get(vs.getCarId());
-                                vs.setPlateNo(vs.getPlateNo());
-                                vs.setDirection(vs.getDirection());
-                                vs.setPointSum(yuan.getPointSum() + vs.getPointSum());
-                                vs.setSpeedSum(yuan.getSpeedSum() + vs.getSpeedSum());
-                                vs.setSpecialFlag(vs.getSpecialFlag());
-                                cm.put(vs.getCarId(), vs);
-                            }
-                        }
-                    }
-                }
-             for (long i = st; i < tt; i += 60000) {
-                    for (int j = startM; j < endM; j++) {
-                        List<VehicleSeg> l = totalOps.getVeByRowkey(hbaseTool.convertToHBaseTableName(i), i + "_CK" + j);
-                        for (VehicleSeg vs : l) {
-                            //判断是否有重复出
-                            if (cm.get(vs.getCarId()) == null) {
-                                cm.put(vs.getCarId(), vs);
-                            } else {
-                                VehicleSeg yuan = cm.get(vs.getCarId());
-                                vs.setPlateNo(vs.getPlateNo());
-                                vs.setDirection(vs.getDirection());
-                                vs.setPointSum(yuan.getPointSum() + vs.getPointSum());
-                                vs.setSpeedSum(yuan.getSpeedSum() + vs.getSpeedSum());
-                                vs.setSpecialFlag(vs.getSpecialFlag());
-                                cm.put(vs.getCarId(), vs);
-                            }
-                        }
-                    }
-                }
-             zn=0;
-                 for (Map.Entry<Long, VehicleSeg> entry : cm.entrySet()) {
-                VehicleSeg v = entry.getValue();
-                if (v != null) {
-                    zn++;
-                    zsum += v.getAverageSpeed();
-
-                    Integer vt = v.getOriginalType();
-                    Integer vet = v.getVehicleType();
-                    if (vt != null) {
-                        if (vt == 1 || vt == 3 || vt == 7 || vt == 15) zupkeche++;
-                        else if (vt == 2 || vt == 10 || vt == 11 || vt == 170 || vt == 171 || vt == 172 || vt == 173 || vt == 174 || vt == 175 || vt == 176 || vt == 177)
-                            zuphuoche++;
-                        else if (vt == 8) {
-                            zupweihuaping++;
-                            zuphuoche++;
-                        }
-                    } else {
-                        if (vet >= 1 && vet <= 4) zupkeche++;
-                        else if (vet >= 11 && vet <= 16)
-                            zuphuoche++;
-                        else {
-                            zn--;
-                            zsum -= v.getAverageSpeed();
-                        }
-                    }
-                }
-            }
-                 sls.add(new sectionLosDirPieces("C",calculateLOS(zn/ ((endM - startM) * 4.0)), zn/ ((endM - startM) * 4.0)));
-
-            //DK
-                startSK = LocationOP.GETLonNearest(114.0438003540039, roadDKDataList).getLocation();
-                endSK = LocationOP.GETLonNearest(114.04520416259766, roadDKDataList).getLocation();
-                index = startSK.indexOf("+");
-                zaStartMil = ((index != -1) ? startSK.substring(2, index) : startSK);
-                index1 = endSK.indexOf("+");
-                zaEndMil = ((index1 != -1) ? endSK.substring(2, index1) : endSK);
-//                System.out.println("DK  zaStartMil:  " + zaStartMil + "  zaEndMil:  " + zaEndMil);
-//                System.out.println("DK  startSK:  " + startSK + "  endSK:  " + endSK);
-                //从起始时间到终止时间
-                startM = Integer.parseInt(zaStartMil);
-                endM = Integer.parseInt(zaEndMil);
-                if (startM > endM) {
-                    int temp = endM;
-                    endM = startM;
-                    startM = temp;
-                }
-                endM += 1;
-                zn=0;
-                for (long i = st; i < tt; i += 60000) {
-                    for (int j = startM; j < endM; j++) {
-                        List<VehicleSeg> l = totalOps.getVeByRowkey(hbaseTool.convertToHBaseTableName(i), i + "_DK" + j);
-                        for (VehicleSeg vs : l) {
-                            //判断是否有重复出
-                            if (dm.get(vs.getCarId()) == null) {
-                                dm.put(vs.getCarId(), vs);
-                            } else {
-                                VehicleSeg yuan = dm.get(vs.getCarId());
-                                vs.setPlateNo(vs.getPlateNo());
-                                vs.setDirection(vs.getDirection());
-                                vs.setPointSum(yuan.getPointSum() + vs.getPointSum());
-                                vs.setSpeedSum(yuan.getSpeedSum() + vs.getSpeedSum());
-                                vs.setSpecialFlag(vs.getSpecialFlag());
-                                dm.put(vs.getCarId(), vs);
-                            }
-                        }
-                    }
-                }
-             for (long i = st; i < tt; i += 60000) {
-                    for (int j = startM; j < endM; j++) {
-                        List<VehicleSeg> l = totalOps.getVeByRowkey(hbaseTool.convertToHBaseTableName(i), i + "_DK" + j);
-                        for (VehicleSeg vs : l) {
-                            //判断是否有重复出
-                            if (dm.get(vs.getCarId()) == null) {
-                                 dm.put(vs.getCarId(), vs);
-                            } else {
-                                VehicleSeg yuan =  dm.get(vs.getCarId());
-                                vs.setPlateNo(vs.getPlateNo());
-                                vs.setDirection(vs.getDirection());
-                                vs.setPointSum(yuan.getPointSum() + vs.getPointSum());
-                                vs.setSpeedSum(yuan.getSpeedSum() + vs.getSpeedSum());
-                                vs.setSpecialFlag(vs.getSpecialFlag());
-                                 dm.put(vs.getCarId(), vs);
-                            }
-                        }
-                    }
-                }
-                 for (Map.Entry<Long, VehicleSeg> entry :  dm.entrySet()) {
-                VehicleSeg v = entry.getValue();
-                if (v != null) {
-                    zn++;
-                    zsum += v.getAverageSpeed();
-
-                    Integer vt = v.getOriginalType();
-                    Integer vet = v.getVehicleType();
-                    if (vt != null) {
-                        if (vt == 1 || vt == 3 || vt == 7 || vt == 15) zupkeche++;
-                        else if (vt == 2 || vt == 10 || vt == 11 || vt == 170 || vt == 171 || vt == 172 || vt == 173 || vt == 174 || vt == 175 || vt == 176 || vt == 177)
-                            zuphuoche++;
-                        else if (vt == 8) {
-                            zupweihuaping++;
-                            zuphuoche++;
-                        }
-                    } else {
-                        if (vet >= 1 && vet <= 4) zupkeche++;
-                        else if (vet >= 11 && vet <= 16)
-                            zuphuoche++;
-                        else {
-                            zn--;
-                            zsum -= v.getAverageSpeed();
-                        }
-                    }
-                }
-            }
-                 sls.add(new sectionLosDirPieces("D",calculateLOS(zn/ ((endM - startM) * 4.0)), zn/ ((endM - startM) * 4.0)));
-
-List<sectionLos>slsList=new ArrayList<>();
-slsList.add(new sectionLos("大悟南枢纽","K1062+700",sls));
-
-                 return new sectionLosResult(200, "(REDIS)查找固定桩号成功", slsList, true);
-
-
-        }
+    if (st > tt) {
+        long temp = st;
+        st = tt;
+        tt = temp;
     }
+
+    Map<String, HBaseTableScanner.KeyRange> scanPlan = HBaseTableScanner.generateScanPlan(st, tt);
+
+    // 遍历所有表
+    for (Map.Entry<String, HBaseTableScanner.KeyRange> entry1 : scanPlan.entrySet()) {
+        String tableName = entry1.getKey();
+        String startKey = entry1.getValue().getStartKey();
+        String endKey = entry1.getValue().getEndKey();
+
+        // 处理A路段
+        String startSK = LocationOP.GETLonNearest(114.03852081298828, roadAKDataList).getLocation();
+        String endSK = LocationOP.GETLonNearest(114.04580688476562, roadAKDataList).getLocation();
+        int index = startSK.indexOf("+");
+        String zaStartMil = (index != -1) ? startSK.substring(2, index) : startSK;
+        index = endSK.indexOf("+");
+        String zaEndMil = (index != -1) ? endSK.substring(2, index) : endSK;
+
+        int startM = Integer.parseInt(zaStartMil);
+        int endM = Integer.parseInt(zaEndMil);
+        if (startM > endM) {
+            int temp = endM;
+            endM = startM;
+            startM = temp;
+        }
+        endM += 1;
+
+        List<VehicleSeg> l = totalOps.getVehicleSegmentsByakRange(tableName,
+                Long.parseLong(startKey), Long.parseLong(endKey), startM, endM);
+
+        // 累加A路段数据
+        znAccumulator.put("A", znAccumulator.get("A") + l.size());
+        lenAccumulator.put("A", (endM - startM) * 4.0);
+
+        // 处理B路段
+        startSK = LocationOP.GETLonNearest(114.03852081298828, roadBKDataList).getLocation();
+        endSK = LocationOP.GETLonNearest(114.04602813720703, roadBKDataList).getLocation();
+        index = startSK.indexOf("+");
+        zaStartMil = (index != -1) ? startSK.substring(2, index) : startSK;
+        index = endSK.indexOf("+");
+        zaEndMil = (index != -1) ? endSK.substring(2, index) : endSK;
+
+        startM = Integer.parseInt(zaStartMil);
+        endM = Integer.parseInt(zaEndMil);
+        if (startM > endM) {
+            int temp = endM;
+            endM = startM;
+            startM = temp;
+        }
+        endM += 1;
+
+        l = totalOps.getVehicleSegmentsBybkRange(tableName,
+                Long.parseLong(startKey), Long.parseLong(endKey), startM, endM);
+
+        // 累加B路段数据
+        znAccumulator.put("B", znAccumulator.get("B") + l.size());
+        lenAccumulator.put("B", (endM - startM) * 4.0);
+
+        // 处理C路段
+        startSK = LocationOP.GETLonNearest(114.0416030883789, roadCKDataList).getLocation();
+        endSK = LocationOP.GETLonNearest(114.04431915283203, roadCKDataList).getLocation();
+        index = startSK.indexOf("+");
+        zaStartMil = (index != -1) ? startSK.substring(2, index) : startSK;
+        index = endSK.indexOf("+");
+        zaEndMil = (index != -1) ? endSK.substring(2, index) : endSK;
+
+        startM = Integer.parseInt(zaStartMil);
+        endM = Integer.parseInt(zaEndMil);
+        if (startM > endM) {
+            int temp = endM;
+            endM = startM;
+            startM = temp;
+        }
+        endM += 1;
+
+        l = totalOps.getVehicleSegmentsByckRange(tableName,
+                Long.parseLong(startKey), Long.parseLong(endKey), startM, endM);
+
+        // 累加C路段数据
+        znAccumulator.put("C", znAccumulator.get("C") + l.size());
+        lenAccumulator.put("C", (endM - startM) * 4.0);
+
+        // 处理D路段
+        startSK = LocationOP.GETLonNearest(114.0438003540039, roadDKDataList).getLocation();
+        endSK = LocationOP.GETLonNearest(114.04520416259766, roadDKDataList).getLocation();
+        index = startSK.indexOf("+");
+        zaStartMil = (index != -1) ? startSK.substring(2, index) : startSK;
+        index = endSK.indexOf("+");
+        zaEndMil = (index != -1) ? endSK.substring(2, index) : endSK;
+
+        startM = Integer.parseInt(zaStartMil);
+        endM = Integer.parseInt(zaEndMil);
+        if (startM > endM) {
+            int temp = endM;
+            endM = startM;
+            startM = temp;
+        }
+        endM += 1;
+
+        l = totalOps.getVehicleSegmentsBydkRange(tableName,
+                Long.parseLong(startKey), Long.parseLong(endKey), startM, endM);
+
+        // 累加D路段数据
+        znAccumulator.put("D", znAccumulator.get("D") + l.size());
+        lenAccumulator.put("D", (endM - startM) * 4.0);
+    }
+
+    // 所有表处理完成后，计算LOS
+    List<sectionLosDirPieces> sls = new ArrayList<>();
+
+    // 计算A路段的LOS
+    double densityA = znAccumulator.get("A") / lenAccumulator.get("A");
+    sls.add(new sectionLosDirPieces("A", calculateLOS(densityA), densityA));
+
+    // 计算B路段的LOS
+    double densityB = znAccumulator.get("B") / lenAccumulator.get("B");
+    sls.add(new sectionLosDirPieces("B", calculateLOS(densityB), densityB));
+
+    // 计算C路段的LOS
+    double densityC = znAccumulator.get("C") / lenAccumulator.get("C");
+    sls.add(new sectionLosDirPieces("C", calculateLOS(densityC), densityC));
+
+    // 计算D路段的LOS
+    double densityD = znAccumulator.get("D") / lenAccumulator.get("D");
+    sls.add(new sectionLosDirPieces("D", calculateLOS(densityD), densityD));
+
+    List<sectionLos> slsList = new ArrayList<>();
+    slsList.add(new sectionLos("大悟南枢纽", "K1062+700", sls));
+
+    return new sectionLosResult(200, "查找固定桩号成功", slsList, true);
+}
 
 
     @Override
@@ -1903,7 +1783,7 @@ slsList.add(new sectionLos("大悟南枢纽","K1062+700",sls));
 
     }
    @Override
-    public flowNo getFlowNo(String startTime, String endTime, String startStake, String endStake) throws IOException {
+    public flowNoNew getFlowNo(String startTime, String endTime, String startStake, String endStake) throws IOException {
         List<totalOpsv3.PeriodTrafficCounts> cl=new ArrayList<>();
 
         List<String> sections1 = getPassedSections(startStake, endStake);
@@ -1923,26 +1803,43 @@ slsList.add(new sectionLos("大悟南枢纽","K1062+700",sls));
         List<Integer>list=new ArrayList<>();
 
 
-        for(int i = 0 ; i < cl.size(); i++){
-            list.add(cl.get(i).getCurrentDirection1()+cl.get(i).getCurrentDirection2());
-        }
+       for (totalOpsv3.PeriodTrafficCounts periodTrafficCounts : cl) {
+           list.add(periodTrafficCounts.getCurrentDirection1() + periodTrafficCounts.getCurrentDirection2());
+       }
         List<Integer>no=calculateRanks(list);
-        List<flowNo.SectionInfo>sl=new ArrayList<>();
+        List<flowNoNew.rank>rnk=new ArrayList<>();
+         List<flowNoNew.DirectionInfo> tp0rank=new ArrayList<>();
+            List<flowNoNew.DirectionInfo> tp2rank=new ArrayList<>();
+            List<flowNoNew.DirectionInfo> tp1rank=new ArrayList<>();
           for(int i = 0 ; i < cl.size(); i++){
             totalOpsv3.PeriodTrafficCounts c=cl.get(no.get(i));
-            List<flowNo.DirectionInfo>d=new ArrayList<>();
-            d.add(new flowNo.DirectionInfo(1,c.getCurrentDirection1(),0+"%",(c.getCurrentDirection1()-c.getPreviousDirection1())/c.getPreviousDirection1()+"%"));
-            d.add(new flowNo.DirectionInfo(2,c.getCurrentDirection2(),0+"%",(c.getCurrentDirection2()-c.getPreviousDirection2())/c.getPreviousDirection2()+"%"));
-            sl.add(new flowNo.SectionInfo(c.getName(),c.getStake(),d));
-          }
+            String mom1="0";
+            String mom2="0";
+            String mom0="0";
+            System.out.println("c.getCurrentDirection1:"+c.getCurrentDirection1()+" c.getCurrentDirection2:"+c.getCurrentDirection2()+"  c.getPreviousDirection1:"+c.getPreviousDirection1()+"  c.getPreviousDirection2:"+c.getPreviousDirection2());
+            if(c.getPreviousDirection1()!=0) mom1=(c.getCurrentDirection1()-c.getPreviousDirection1())/c.getPreviousDirection1()+"%";
+            if(c.getPreviousDirection2()!=0) mom2=(c.getCurrentDirection2()-c.getPreviousDirection2())/c.getPreviousDirection2()+"%";
+            if(c.getPreviousDirection2()+c.getPreviousDirection1()!=0) mom0=(c.getCurrentDirection2()+c.getCurrentDirection1()-c.getPreviousDirection1()-c.getPreviousDirection2())/(c.getPreviousDirection2()+c.getPreviousDirection1())+"%";
 
-        return new flowNo(200, "成功", new flowNo.SectionTrafficData(sl), true);
+            tp0rank.add(new flowNoNew.DirectionInfo(c.getName(),c.getStake(),c.getCurrentDirection1()+c.getCurrentDirection2(),0+"%",mom0));
+            tp1rank.add(new flowNoNew.DirectionInfo(c.getName(),c.getStake(),c.getCurrentDirection1(),0+"%",mom1));
+            tp2rank.add(new flowNoNew.DirectionInfo(c.getName(),c.getStake(),c.getCurrentDirection2(),0+"%",mom2));
+
+          }
+          rnk.add(new flowNoNew.rank(0,tp0rank));
+          rnk.add(new flowNoNew.rank(1,tp1rank));
+          rnk.add(new flowNoNew.rank(2,tp2rank));
+
+
+        return new flowNoNew(200, "成功", rnk, true);
     }
+
+
     public static List<Integer> calculateRanks(List<Integer> list) {
         // 创建一个副本用于排序而不影响原始列表
         List<Integer> sortedList = new ArrayList<>(list);
         // 降序排序
-        Collections.sort(sortedList, Collections.reverseOrder());
+        sortedList.sort(Collections.reverseOrder());
 
         // 创建一个映射来存储每个元素的排名
         Map<Integer, Integer> rankMap = new HashMap<>();
@@ -2013,6 +1910,19 @@ slsList.add(new sectionLos("大悟南枢纽","K1062+700",sls));
 
 
 
+    }
+        @Override
+    public ZaFlowNoResult getZaFlowNo(String startTime, String endTime, String startStake, String endStake) throws IOException {
+                TollStationFlowCalculator calculator = new TollStationFlowCalculator();
+
+            TollStationFlowCalculator.TollStationFlow flow = calculator.calculateFlow("孝感收费站", startTime, endTime);
+            System.out.println(flow.toJSON().toJSONString());
+
+            // 批量计算多个收费站
+            List<String> stations = Arrays.asList("孝感收费站");
+            Map<String, TollStationFlowCalculator.TollStationFlow> batchResults = calculator.calculateBatchFlow(stations, startTime, endTime);
+
+        return new ZaFlowNoResult(200, "成功", batchResults ,true);
     }
 
 }

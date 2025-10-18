@@ -125,7 +125,9 @@ public class Utils {
         private double weight;
         private eventInfo eventinfo;
     }
- @Data
+@Data
+@NoArgsConstructor
+
     public static class eventInfo implements Serializable{
 
     }
@@ -225,7 +227,9 @@ public class Utils {
     /**
      * GantryAssignment 会在主程序的static代码块中加载已知的gantry信息
      */
-    @Getter
+  @Data
+@NoArgsConstructor
+@AllArgsConstructor
     public static class GantryAssignment implements Serializable {
         private Map<Integer, List<GantryInfo>> gantriesByDirection;
         private Map<String, GantryInfo> gantriesByID;

@@ -542,6 +542,6 @@ public class totalOpsV2 {
         long st = convertToTimestamp(startTime);
         long et = convertToTimestamp(endTime);
         Map<String, Object> result = totalOpsV2.queryTrafficDataByLevel(stationId, st, et, level);
-        return new upDownResult(200, "查询成功", Arrays.asList(result), true);
+        return new upDownResult(200, "查询成功", Collections.singletonList(result), true);
     }
 }
