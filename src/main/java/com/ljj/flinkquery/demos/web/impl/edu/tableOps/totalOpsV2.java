@@ -2,7 +2,9 @@ package com.ljj.flinkquery.demos.web.impl.edu.tableOps;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
+import com.ljj.flinkquery.demos.entity.data.seventhData;
 import com.ljj.flinkquery.demos.entity.upDownResult;
+import com.ljj.flinkquery.demos.web.impl.edu.querys.TollStationFlowCalculator;
 import lombok.*;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.*;
@@ -538,10 +540,13 @@ public class totalOpsV2 {
     }
 
     // 修改后的方法，支持级别参数
-    public static upDownResult getUpDownChargerByDuration1(String stationId, String startTime, String endTime, int level) {
+    public static seventhData getUpDownChargerByDuration1(String stationId, String startTime, String endTime) {
         long st = convertToTimestamp(startTime);
         long et = convertToTimestamp(endTime);
-        Map<String, Object> result = totalOpsV2.queryTrafficDataByLevel(stationId, st, et, level);
-        return new upDownResult(200, "查询成功", Collections.singletonList(result), true);
+        TollStationFlowCalculator calculator = new TollStationFlowCalculator();
+
+        seventhData flow = calculator.calculateFlowMore(stationId, startTime, endTime);
+
+        return  flow;
     }
 }

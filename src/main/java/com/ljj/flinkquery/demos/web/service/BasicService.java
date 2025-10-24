@@ -2,6 +2,7 @@ package com.ljj.flinkquery.demos.web.service;
 
 import com.ljj.flinkquery.FlinkQueryApplication;
 import com.ljj.flinkquery.demos.entity.ZaFlowNoResult;
+import com.ljj.flinkquery.demos.entity.data.seventhResult;
 import com.ljj.flinkquery.demos.entity.watch.*;
 import com.ljj.flinkquery.demos.web.impl.edu.querys.TollStationFlowCalculator;
 import com.ljj.flinkquery.demos.web.impl.edu.tableOps.totalOpsv3;
@@ -34,7 +35,7 @@ Map<String, Map<Integer, Map<Integer, Integer>>> getHourlyTrafficStatistics(long
 
 upDownResult getUpDownChargerByDuration(String stationId, String startTime, String endTime);
 totalResult getHolyTotal(Long timestamp) throws IOException, ExecutionException, InterruptedException;
-List<upDownResult> getBatchUpDownCharger(List<String> stationIds,String beginTime,String endTime,int level);
+seventhResult getBatchUpDownCharger(List<String> stationIds, String beginTime, String endTime);
 
 
 sectionLosResult sectionLOS(String beginTime,String endTime ,String startStake,String endStake) throws IOException;

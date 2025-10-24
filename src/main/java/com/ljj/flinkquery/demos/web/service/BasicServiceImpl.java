@@ -4,6 +4,8 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONException;
 import com.ljj.flinkquery.demos.entity.*;
+import com.ljj.flinkquery.demos.entity.data.seventhData;
+import com.ljj.flinkquery.demos.entity.data.seventhResult;
 import com.ljj.flinkquery.demos.entity.watch.*;
 import com.ljj.flinkquery.demos.web.impl.edu.hbaseTool;
 import com.ljj.flinkquery.demos.web.impl.edu.querys.TollStationFlowCalculator;
@@ -117,13 +119,14 @@ public class BasicServiceImpl implements BasicService {
     }
         // 批量查询方法
     @Override
-    public List<upDownResult> getBatchUpDownCharger(List<String> stationIds, String beginTime, String endTime, int level) {
-        List<upDownResult> l = new ArrayList<>();
+    public seventhResult getBatchUpDownCharger(List<String> stationIds, String beginTime, String endTime) {
+        List<seventhData> l = new ArrayList<>();
         System.out.println("====sts:"+stationIds);
         for (String stationId : stationIds) {
-            l.add(getUpDownChargerByDuration1(stationId, beginTime, endTime, level));
+            l.add(getUpDownChargerByDuration1(stationId, beginTime, endTime));
         }
-        return l;
+        seventhResult l1 = new seventhResult(200, "查询成功",  true,l);
+        return l1;
     }
 
     @Override
@@ -1788,14 +1791,16 @@ public sectionLosResult zaSectionLOS(String beginTime, String endTime, String fa
 
         List<String> sections1 = getPassedSections(startStake, endStake);
         for(String section : sections1) {
+            System.out.println(section);
             String stStake="";
             String edStake="";
             for(HighwaySectionUtils.HighwaySection section1:SECTIONS){
                 if(section1.getStartName().equals(section.substring(0,2))){
                     stStake=section1.getStartStake();
                     edStake=section1.getEndStake();
-                    totalOpsv3.PeriodTrafficCounts counts = totalOpsv3.getTrafficCountWithPreviousPeriod(startTime, endTime, stStake, edStake, section1.getStartName()+"-"+section1.getEndName());
+                    totalOpsv3.PeriodTrafficCounts counts = totalOpsv3.getTrafficCountWithPreviousPeriod(startTime, endTime, stStake, edStake, section);
                     counts.setStake(stStake+"-"+edStake);
+
                     cl.add(counts);
                 }
             }
@@ -1812,7 +1817,10 @@ public sectionLosResult zaSectionLOS(String beginTime, String endTime, String fa
             List<flowNoNew.DirectionInfo> tp2rank=new ArrayList<>();
             List<flowNoNew.DirectionInfo> tp1rank=new ArrayList<>();
           for(int i = 0 ; i < cl.size(); i++){
+
             totalOpsv3.PeriodTrafficCounts c=cl.get(no.get(i));
+
+
             String mom1="0";
             String mom2="0";
             String mom0="0";
@@ -1835,27 +1843,30 @@ public sectionLosResult zaSectionLOS(String beginTime, String endTime, String fa
     }
 
 
-    public static List<Integer> calculateRanks(List<Integer> list) {
-        // 创建一个副本用于排序而不影响原始列表
-        List<Integer> sortedList = new ArrayList<>(list);
-        // 降序排序
-        sortedList.sort(Collections.reverseOrder());
-
-        // 创建一个映射来存储每个元素的排名
-        Map<Integer, Integer> rankMap = new HashMap<>();
-        int rank = 1;
-        for (int i = 0; i < sortedList.size(); i++) {
-            // 如果当前元素与前一个元素不同，更新排名
-            if (i == 0 || !sortedList.get(i).equals(sortedList.get(i - 1))) {
-                rank = i + 1;
-            }
-            rankMap.put(sortedList.get(i), rank);
+  public static List<Integer> calculateRanks(List<Integer> list) {
+        // 创建一个索引列表，用于记录原始位置
+        List<Integer> indices = new ArrayList<>();
+        for (int i = 0; i < list.size(); i++) {
+            indices.add(i);
         }
 
-        // 创建结果列表，存储原始列表中每个元素的排名
-        List<Integer> result = new ArrayList<>();
-        for (int num : list) {
-            result.add(rankMap.get(num)-1);
+        // 根据数值降序排序索引（数值大的排名靠前）
+        // 如果数值相同，保持原始顺序
+        indices.sort((a, b) -> {
+            int valueCompare = Integer.compare(list.get(b), list.get(a)); // 改为降序
+            if (valueCompare == 0) {
+                return Integer.compare(a, b); // 保持原始顺序
+            }
+            return valueCompare;
+        });
+
+        // 创建结果列表，初始值为0
+        List<Integer> result = new ArrayList<>(Collections.nCopies(list.size(), 0));
+
+        // 分配排名
+        for (int rank = 0; rank < indices.size(); rank++) {
+            int originalIndex = indices.get(rank);
+            result.set(originalIndex, rank);
         }
 
         return result;

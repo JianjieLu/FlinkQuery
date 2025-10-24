@@ -182,7 +182,7 @@ public class FlinkQueryApplication {
 
     // 如果没有指定topics，使用默认值
     if (topics.isEmpty()) {
-        topics = Arrays.asList("jtkj.jga.path.1"); // 默认topic
+        topics = Arrays.asList("jtkj.jga.path"); // 默认topic
     }
 
     System.out.println("Using brokers: " + brokers);

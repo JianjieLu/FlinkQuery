@@ -2,6 +2,7 @@ package com.ljj.flinkquery.demos.web.controller;
 
 import com.ljj.flinkquery.FlinkQueryApplication;
 import com.ljj.flinkquery.demos.entity.ZaFlowNoResult;
+import com.ljj.flinkquery.demos.entity.data.seventhResult;
 import com.ljj.flinkquery.demos.entity.request.sitRequest;
 import com.ljj.flinkquery.demos.entity.watch.*;
 import com.ljj.flinkquery.demos.web.impl.edu.querys.TollStationFlowCalculator;
@@ -216,14 +217,13 @@ public upDownResult getUpDownChargerByDuration(@RequestBody Map<String, String> 
 //    );
 //}
 @PostMapping("/getBatchUpDownCharger")
-public List<upDownResult> getBatchUpDownCharger(
+public seventhResult getBatchUpDownCharger(
          @RequestBody BatchQueryRequest request) {
 
     return basicService.getBatchUpDownCharger(
         request.getStationIds(),  // 改为复数形式
         request.getBeginTime(),
-        request.getEndTime(),
-        request.getLevel()
+        request.getEndTime()
     );
 }
 @GetMapping("/plateNumbers")

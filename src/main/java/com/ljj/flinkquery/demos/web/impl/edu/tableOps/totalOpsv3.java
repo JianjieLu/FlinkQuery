@@ -371,6 +371,7 @@ public class totalOpsv3 {
     @NoArgsConstructor
     @Getter
     @Setter
+    @Data
     public static class PeriodTrafficCounts {
         private int currentDirection1; // 当前时间段方向1总车辆数
         private int currentDirection2; // 当前时间段方向2总车辆数

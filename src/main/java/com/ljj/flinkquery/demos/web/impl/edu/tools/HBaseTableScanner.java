@@ -148,7 +148,7 @@ public class HBaseTableScanner {
      * 生成季度表名（格式：JTSTCar_2025Q3）
      */
     private static String getQuarterTableName(int year, int quarter) {
-        return "RFSTCar_" + year + "Q" + quarter;
+        return "JTSTCar_" + year + "Q" + quarter;
     }
 
     /**

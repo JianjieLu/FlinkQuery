@@ -2,7 +2,14 @@ package com.ljj.flinkquery.demos.web.impl.edu.querys;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import com.ljj.flinkquery.demos.entity.data.seventhData;
+import com.ljj.flinkquery.demos.entity.data.seventhPiece;
+import com.ljj.flinkquery.demos.entity.data.seventhResult;
 import javafx.util.Pair;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 import org.apache.flink.api.java.tuple.Tuple5;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.*;
@@ -30,6 +37,7 @@ public class TollStationFlowCalculator {
 
     // 收费站配置
     private Map<String, String> stationConfig = new HashMap<>();
+    private Map<String, String> stationConfig1 = new HashMap<>();
 
     public TollStationFlowCalculator() {
         // 初始化HBase配置
@@ -45,7 +53,7 @@ public class TollStationFlowCalculator {
         // 收费站名称映射到orgcode
         stationConfig.put("孝感收费站", "C7370151-2116-470A-8E26-5F878B3C9D78");
         stationConfig.put("XG01", "C7370151-2116-470A-8E26-5F878B3C9D78");
-        // 可以添加更多收费站配置
+          stationConfig1.put( "C7370151-2116-470A-8E26-5F878B3C9D78","孝感收费站");
     }
 
     /**
@@ -143,6 +151,32 @@ public class TollStationFlowCalculator {
         }
     }
 
+
+    public seventhData calculateFlowMore(String stationId, String startTime, String endTime) {
+        try {
+            if (connection == null) {
+                connection = ConnectionFactory.createConnection(conf);
+            }
+
+
+            // 解析时间
+            LocalDateTime start = LocalDateTime.parse(startTime, TIME_FORMATTER);
+            LocalDateTime end = LocalDateTime.parse(endTime, TIME_FORMATTER);
+
+            // 计算当前时间段流量
+            FlowDataMore currentFlow = getFlowDataMore(stationId, start, end);
+            List<seventhPiece>s=new ArrayList<>();
+            s.add(new seventhPiece(1,currentFlow.uptotal,currentFlow.upbus,currentFlow.uptruck, 23.3F));
+            s.add(new seventhPiece(2,currentFlow.uptotal,currentFlow.upbus,currentFlow.uptruck, 23.0F));
+            seventhData data = new seventhData(stationId, stationConfig1.get(stationId), s);
+            return data;
+
+
+        } catch (Exception e) {
+            throw new RuntimeException("计算收费站流量失败: " + e.getMessage(), e);
+        }
+    }
+
     /**
      * 获取指定时间段的流量数据
      */
@@ -181,6 +215,72 @@ public class TollStationFlowCalculator {
         return new FlowData(entryTotal, exportTotal);
     }
 
+
+        private FlowDataMore getFlowDataMore(String orgcode, LocalDateTime start, LocalDateTime end) throws IOException {
+        Table table = connection.getTable(TableName.valueOf(TABLE_NAME));
+
+        long startHour = getHourTimestamp(start);
+        long endHour = getHourTimestamp(end);
+
+        int entryTotal = 0;
+        int exportTotal = 0;
+        int downbus=0;
+        int upbus=0;
+        int downtruck=0;
+        int uptruck=0;
+
+
+        // 遍历每个小时的时间段
+        for (long hour = startHour; hour <= endHour; hour += 3600000) {
+            String rowKey = orgcode + "_" + hour;
+
+            Get get = new Get(Bytes.toBytes(rowKey));
+            Result result = table.get(get);
+
+            if (!result.isEmpty()) {
+                // 读取上行流量（入口）
+                byte[] entryBytes = result.getValue(Bytes.toBytes(COLUMN_FAMILY), Bytes.toBytes("upCount"));
+                if (entryBytes != null) {
+                    entryTotal += Integer.parseInt(Bytes.toString(entryBytes));
+                }
+
+                // 读取下行流量（出口）
+                byte[] exportBytes = result.getValue(Bytes.toBytes(COLUMN_FAMILY), Bytes.toBytes("downCount"));
+                if (exportBytes != null) {
+                    exportTotal += Integer.parseInt(Bytes.toString(exportBytes));
+                }
+
+                // 读取下行流量（出口）
+                byte[] busup = result.getValue(Bytes.toBytes(COLUMN_FAMILY), Bytes.toBytes("upBus"));
+                if (exportBytes != null) {
+                    upbus += Integer.parseInt(Bytes.toString(busup));
+                }
+
+                // 读取下行流量（出口）
+                byte[] truckup = result.getValue(Bytes.toBytes(COLUMN_FAMILY), Bytes.toBytes("upTrack"));
+                if (exportBytes != null) {
+                    uptruck += Integer.parseInt(Bytes.toString(truckup));
+                }
+
+                    // 读取下行流量（出口）
+                byte[] busdown = result.getValue(Bytes.toBytes(COLUMN_FAMILY), Bytes.toBytes("downBus"));
+                if (exportBytes != null) {
+                    downbus += Integer.parseInt(Bytes.toString(busdown));
+                }
+
+                // 读取下行流量（出口）
+                byte[] truckdown = result.getValue(Bytes.toBytes(COLUMN_FAMILY), Bytes.toBytes("downTrack"));
+                if (exportBytes != null) {
+                    downtruck += Integer.parseInt(Bytes.toString(truckdown));
+                }
+
+
+            }
+        }
+
+        table.close();
+        return new FlowDataMore(entryTotal, upbus,uptruck,exportTotal,downbus,downtruck);
+    }
     /**
      * 计算小时级时间戳
      */
@@ -229,6 +329,19 @@ public class TollStationFlowCalculator {
         }
     }
 
+@AllArgsConstructor
+@NoArgsConstructor
+@Getter
+@Setter
+  private static class FlowDataMore {
+        public int uptotal;
+        public int upbus;
+        public int uptruck;
+
+        public int downtotal;
+        public int downbus;
+        public int downtruck;
+    }
     /**
      * 批量计算多个收费站的流量
      */
